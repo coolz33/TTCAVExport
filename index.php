@@ -1,56 +1,67 @@
+<?php
+/**
+ * Application : TTCAV Results Generator
+ * Description : Générateur de rapports premium pour les clubs de tennis de table.
+ * Auteur : Antigravity (AI Assistant)
+ * Date : 2026-04-03
+ */
+
+// Paramètres de configuration (si besoin de charger des variables PHP ici)
+?>
 <!DOCTYPE html>
 <html lang="fr">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TT Results Generator | Club Dashboard</title>
-    <meta name="description" content="Générateur de résultats de tennis de table pour les clubs FFTT.">
+    <meta name="description" content="Générateur de rapports de tennis de table pour clubs FFTT.">
+    
+    <!-- Polices et Styles -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Playfair+Display:wght@700&family=Lora:ital,wght@0,400;0,700;1,400&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Playfair+Display:wght@700&family=Lora:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
-
+    <!-- Systéme de Notifications (Toast) -->
     <div id="toast" class="toast">
         <i class="fas fa-check-circle"></i>
         <span id="toast-message"></span>
     </div>
 
     <div class="container" id="app">
+        <!-- En-tête -->
         <header>
             <div class="logo">
                 <h1>TT<span>CAV</span> Export</h1>
             </div>
             <div class="actions">
-                <button class="secondary open-settings-btn">
+                <button class="secondary open-settings-btn" title="Paramètres API">
                     <i class="fas fa-cog"></i> Configuration
                 </button>
-                <button class="btn-refresh-btn" id="btn-refresh-top">
+                <button class="btn-refresh-btn" id="btn-refresh-top" title="Recharger les équipes">
                     <i class="fas fa-sync-alt"></i> Actualiser
                 </button>
             </div>
         </header>
 
+        <!-- Section Héro -->
         <div class="hero">
-            <h2>Création rapide des résultats du championnat par équipe</h2>
-            <p>Génére des résultats et exporte-les vers le site wordpress du club en un clic.</p>
+            <h2>Création rapide des rapports de championnat</h2>
+            <p>Générez des visuels professionnels et exportez-les vers WordPress en un clic.</p>
         </div>
 
-        <!-- Top Actions -->
+        <!-- Barre de Contrôles Principal -->
         <div class="controls-bar glass-panel">
-            <select id="select-phase" class="fancy-select">
+            <select id="select-phase" class="fancy-select" title="Filtrer par phase">
                 <option value="all">Toutes les phases</option>
             </select>
-            <select id="select-team" class="fancy-select">
+            <select id="select-team" class="fancy-select" title="Choisir une équipe">
                 <option value="all">Toutes les équipes</option>
             </select>
-            <select id="select-day" class="fancy-select">
+            <select id="select-day" class="fancy-select" title="Choisir une journée">
                 <option value="">Sélectionnez une journée</option>
             </select>
             <button id="btn-generate" class="btn-primary">⚡ Générer</button>
@@ -60,50 +71,44 @@
             <button class="secondary" id="btn-copy-text">
                 <i class="fas fa-copy"></i> Copier le texte
             </button>
-            <button class="secondary" id="btn-copy-css">
+            <button class="secondary" id="btn-copy-css" title="Copier le CSS pour WordPress">
                 <i class="fas fa-code"></i> Copier CSS (WP)
             </button>
         </div>
 
+        <!-- Indicateur de chargement -->
         <div class="loading" id="loader">
             <i class="fas fa-circle-notch"></i>
-            <p style="margin-top: 1rem">Récupération des données depuis la FFTT...</p>
+            <p style="margin-top: 1rem">Communication avec les serveurs FFTT...</p>
         </div>
 
+        <!-- Grille de résultats -->
         <div class="results-grid" id="results-grid">
-            <!-- Cards will be injected here -->
             <div id="initial-msg" style="grid-column: 1/-1; text-align: center; opacity: 0.5; padding: 4rem;">
-                Chargement...
+                Chargement de l'application...
             </div>
         </div>
 
-        <!-- Export View Hidden Normally -->
-        <div id="export-container" style="position: absolute; left: -9999px;">
+        <!-- Conteneur d'export (caché par défaut) -->
+        <div id="export-container" style="position: absolute; left: -9999px; display: none;">
             <div id="export-panel">
-                <h1 class="export-title" id="exp-title">CHAMPIONNAT PAR ÉQUIPES</h1>
-                <div class="export-subtitle" id="exp-subtitle">Phase 2 - Journée 3</div>
-                <div id="export-matches"></div>
-                <div
-                    style="text-align: center; margin-top: 3rem; border-top: 1px solid #eee; padding-top: 1rem; font-size: 0.9rem; color: #999;">
-                    Généré par <span style="color: #e63946; font-weight: bold;">TTCAV Dashboard</span>
-                </div>
+                <!-- Le contenu sera généré dynamiquement -->
             </div>
         </div>
 
-        <!-- Debug Console -->
-        <div id="debug-console"
-            style="margin-top: 4rem; padding: 1.5rem; background: #000; border: 1px solid #333; border-radius: 8px; font-family: monospace; font-size: 0.8rem; color: #0f0; max-height: 200px; overflow-y: auto;">
+        <!-- Console de Debug -->
+        <div id="debug-console" style="display: none; margin-top: 4rem; padding: 1.5rem; background: #000; border: 1px solid #333; border-radius: 8px; font-family: monospace; font-size: 0.8rem; color: #0f0; max-height: 200px; overflow-y: auto;">
             <div style="color: #666; margin-bottom: 0.5rem; text-transform: uppercase;">Flux de debug API</div>
             <div id="debug-log"></div>
         </div>
     </div>
 
-    <!-- Settings Modal -->
+    <!-- Modal de Configuration -->
     <div class="modal-overlay" id="modal-settings">
         <div class="modal">
             <h3>Configuration API FFTT</h3>
             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1.5rem;">
-                Ces identifiants sont nécessaires pour interroger les serveurs de la fédération.
+                Identifiants requis pour interroger les serveurs fédéraux.
             </p>
             <div class="form-group">
                 <label>App ID (ex: ASXXX)</label>
@@ -114,25 +119,28 @@
                 <input type="password" id="input-app-key" placeholder="Votre clé secrète">
             </div>
             <div class="form-group">
-                <label>Serial (N° de série, requis pour SWXXX)</label>
-                <input type="text" id="input-serial" placeholder="Votre numéro de série">
+                <label>Serial (Requis pour SWXXX)</label>
+                <input type="text" id="input-serial" placeholder="N° de série">
             </div>
             <div class="form-group">
                 <label>Numéro de Club (ex: 09690049)</label>
                 <input type="text" id="input-club-id" placeholder="09690049">
             </div>
-            <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-top: 1rem;">
-                <input type="checkbox" id="input-show-debug" style="width: auto; height: auto;">
-                <label for="input-show-debug" style="margin-bottom: 0;">Afficher le panneau de debug</label>
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="input-show-debug">
+                <label for="input-show-debug">Afficher le panneau de debug</label>
             </div>
-            <div style="display: flex; gap: 1rem; margin-top: 2rem;">
-                <button style="flex: 1" id="save-settings">Enregistrer</button>
+            <div class="modal-footer">
+                <button class="btn-primary" id="save-settings">Enregistrer</button>
                 <button class="secondary" id="close-settings">Fermer</button>
             </div>
         </div>
     </div>
 
     <script>
+        /**
+         * ÉTAT GLOBAL DE L'APPLICATION
+         */
         const state = {
             appId: localStorage.getItem('fftt_appId') || '',
             appKey: localStorage.getItem('fftt_appKey') || '',
@@ -144,63 +152,70 @@
             results: []
         };
 
-        // UI Elements
-        const btnSettings = document.getElementById('btn-settings');
-        const modalSettings = document.getElementById('modal-settings');
-        const saveSettings = document.getElementById('save-settings');
-        const closeSettings = document.getElementById('close-settings');
-        const btnGenerate = document.getElementById('btn-generate');
-        const btnCapture = document.getElementById('btn-capture');
-        const btnCopyText = document.getElementById('btn-copy-text');
-        const resultsGrid = document.getElementById('results-grid');
-        const loader = document.getElementById('loader');
-        const toast = document.getElementById('toast');
-        const toastMsg = document.getElementById('toast-message');
+        /**
+         * RÉFÉRENCES DOM
+         */
+        const elements = {
+            modal: document.getElementById('modal-settings'),
+            resultsGrid: document.getElementById('results-grid'),
+            loader: document.getElementById('loader'),
+            toast: document.getElementById('toast'),
+            toastMsg: document.getElementById('toast-message'),
+            debugLog: document.getElementById('debug-log'),
+            debugConsole: document.getElementById('debug-console'),
+            selectPhase: document.getElementById('select-phase'),
+            selectTeam: document.getElementById('select-team'),
+            selectDay: document.getElementById('select-day'),
+            exportPanel: document.getElementById('export-panel'),
+            exportContainer: document.getElementById('export-container')
+        };
 
-        // Init inputs
-        document.getElementById('input-app-id').value = state.appId;
-        document.getElementById('input-app-key').value = state.appKey;
-        document.getElementById('input-serial').value = state.serial;
-        document.getElementById('input-club-id').value = state.clubId;
-        document.getElementById('input-show-debug').checked = state.showDebug;
-        document.getElementById('debug-console').style.display = state.showDebug ? 'block' : 'none';
+        /**
+         * INITIALISATION
+         */
+        function initializeApp() {
+            // Remplissage des champs de config
+            document.getElementById('input-app-id').value = state.appId;
+            document.getElementById('input-app-key').value = state.appKey;
+            document.getElementById('input-serial').value = state.serial;
+            document.getElementById('input-club-id').value = state.clubId;
+            document.getElementById('input-show-debug').checked = state.showDebug;
+            elements.debugConsole.style.display = state.showDebug ? 'block' : 'none';
 
-        function updateInitialMessage() {
-            const msgEl = document.getElementById('initial-msg');
-            if (msgEl) {
-                msgEl.innerText = (state.appId && state.clubId) ? 
-                    'Sélectionnez une journée ci-dessus pour générer les résultats.' : 
-                    'Configurez vos accès API pour commencer.';
-            }
-        }
-        updateInitialMessage();
+            updateInitialMessage();
+            bindEvents();
 
-        function showToast(message, isError = false) {
-            toastMsg.innerText = message;
-            const icon = toast.querySelector('i');
-            if (isError) {
-                icon.className = 'fas fa-exclamation-circle';
-                icon.style.color = '#ef4444';
-            } else {
-                icon.className = 'fas fa-check-circle';
-                icon.style.color = 'var(--win)';
-            }
-            toast.classList.add('show');
-            setTimeout(() => toast.classList.remove('show'), 3000);
+            if (state.appId && state.clubId) loadTeams();
         }
 
+        /**
+         * GESTION DES ÉVÉNEMENTS
+         */
+        function bindEvents() {
+            // Modals
+            document.querySelectorAll('.open-settings-btn').forEach(btn => {
+                btn.onclick = () => elements.modal.style.display = 'flex';
+            });
+            document.getElementById('close-settings').onclick = () => elements.modal.style.display = 'none';
 
-        // Modal events
-        document.querySelectorAll('.open-settings-btn').forEach(btn => {
-            btn.onclick = () => modalSettings.style.display = 'flex';
-        });
-        closeSettings.onclick = () => modalSettings.style.display = 'none';
+            // Actions
+            document.querySelectorAll('.btn-refresh-btn').forEach(btn => {
+                btn.onclick = loadTeams;
+            });
+            document.getElementById('save-settings').onclick = saveConfiguration;
+            document.getElementById('btn-generate').onclick = generateResults;
+            document.getElementById('btn-copy-text').onclick = copyToClipboardText;
+            document.getElementById('btn-copy-css').onclick = copyToClipboardCSS;
+            
+            // Sélecteurs
+            elements.selectPhase.onchange = () => updateTeamDropdown(elements.selectPhase.value);
+            elements.selectTeam.onchange = onTeamSelectionChange;
+        }
 
-        document.querySelectorAll('.btn-refresh-btn').forEach(btn => {
-            btn.onclick = () => loadTeams();
-        });
-
-        saveSettings.onclick = () => {
+        /**
+         * LOGIQUE CONFIGURATION
+         */
+        function saveConfiguration() {
             state.appId = document.getElementById('input-app-id').value;
             state.appKey = document.getElementById('input-app-key').value;
             state.serial = document.getElementById('input-serial').value;
@@ -213,1021 +228,448 @@
             localStorage.setItem('fftt_clubId', state.clubId);
             localStorage.setItem('fftt_showDebug', state.showDebug);
 
-            document.getElementById('debug-console').style.display = state.showDebug ? 'block' : 'none';
-
+            elements.debugConsole.style.display = state.showDebug ? 'block' : 'none';
             updateInitialMessage();
-
-            modalSettings.style.display = 'none';
+            elements.modal.style.display = 'none';
             showToast('Configuration enregistrée !');
             loadTeams();
-        };
+        }
 
+        /**
+         * UTILITAIRES INTERFACE
+         */
+        function showToast(message, isError = false) {
+            elements.toastMsg.innerText = message;
+            const icon = elements.toast.querySelector('i');
+            icon.className = isError ? 'fas fa-exclamation-circle' : 'fas fa-check-circle';
+            icon.style.color = isError ? '#ef4444' : 'var(--win)';
+            
+            elements.toast.classList.add('show');
+            setTimeout(() => elements.toast.classList.remove('show'), 3000);
+        }
 
-        async function fetchData(action, extraParams = {}) {
-            const params = new URLSearchParams({
-                appId: state.appId,
-                appKey: state.appKey,
-                serial: state.serial,
-                clubId: state.clubId,
-                action: action,
-                ...extraParams
-            });
-
-            try {
-                logDebug(`Appel API : action=${action}`);
-                const response = await fetch(`api.php?${params.toString()}`);
-                const data = await response.json();
-                if (data.error) {
-                    const msg = data.message ? `${data.error} : ${data.message}` : data.error;
-                    logDebug(msg, 'error');
-                    if (data.raw) {
-                        logDebug(`BRUT REÇU :\n${data.raw}`, 'info');
-                    }
-                }
-                return data;
-            } catch (e) {
-                logDebug(`Erreur réseau : ${e.message}`, 'error');
-                console.error('Fetch error:', e);
-                return { error: 'Erreur réseau' };
+        function updateInitialMessage() {
+            const msgEl = document.getElementById('initial-msg');
+            if (msgEl) {
+                msgEl.innerText = (state.appId && state.clubId) ? 
+                    'Sélectionnez une journée ci-dessus pour générer les rapports.' : 
+                    'Configurez vos accès API pour commencer.';
             }
         }
 
         function logDebug(msg, type = 'info') {
-            const log = document.getElementById('debug-log');
             const entry = document.createElement('div');
             entry.style.color = type === 'error' ? '#f55' : '#0f0';
             entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            log.appendChild(entry);
-            console.log(msg);
+            elements.debugLog.appendChild(entry);
+            elements.debugLog.scrollTop = elements.debugLog.scrollHeight;
         }
 
+        /**
+         * COMMUNICATION API
+         */
+        async function apiRequest(action, extraParams = {}) {
+            const params = new URLSearchParams({
+                appId: state.appId, appKey: state.appKey,
+                serial: state.serial, clubId: state.clubId,
+                action: action, ...extraParams
+            });
+
+            try {
+                logDebug(`API Request: ${action}`);
+                const response = await fetch(`api.php?${params.toString()}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    logDebug(data.message || data.error, 'error');
+                    if (data.raw) logDebug(`RAW RESPONSE: ${data.raw.substring(0, 100)}...`);
+                }
+                return data;
+            } catch (e) {
+                logDebug(`Network error: ${e.message}`, 'error');
+                return { error: 'Erreur réseau' };
+            }
+        }
+
+        /**
+         * CHARGEMENT DES DONNÉES ÉQUIPES
+         */
         async function loadTeams() {
-            const clubId = state.clubId;
-            if (!clubId) return alert('Veuillez saisir votre numéro de club.');
-
-            loader.style.display = 'block';
-            logDebug(`Initialisation du serial...`);
-            await fetchData('getInitialisation');
-
-            logDebug(`Chargement des équipes pour le club ${clubId}...`);
-            const data = await fetchData('getTeams');
-            loader.style.display = 'none';
+            if (!state.clubId) return showToast('Veuillez configurer votre Numéro de Club.', true);
+            
+            elements.loader.style.display = 'block';
+            await apiRequest('getInitialisation'); // S'assurer que le serial est valide côté serveur
+            
+            const data = await apiRequest('getTeams');
+            elements.loader.style.display = 'none';
 
             if (data && data.equipe) {
                 state.teams = Array.isArray(data.equipe) ? data.equipe : [data.equipe];
-                logDebug(`${state.teams.length} équipes chargées avec succès.`);
-
-                // Extract phases
+                
+                // Extraction des phases
                 const phases = new Set();
                 state.teams.forEach(t => {
-                    const tName = t.libequipe || t.libequ || t.libepr || t.lib || "";
-                    const match = tName.match(/Phase\s*\d+/i);
+                    const match = (t.libequipe || "").match(/Phase\s*\d+/i);
                     if (match) phases.add(match[0]);
                 });
 
-                const selectPhase = document.getElementById('select-phase');
-                selectPhase.innerHTML = '<option value="all">Toutes les phases</option>';
+                // Remplissage Phase Selector
+                elements.selectPhase.innerHTML = '<option value="all">Toutes les phases</option>';
                 Array.from(phases).sort().forEach(p => {
-                    const opt = document.createElement('option');
-                    opt.value = p;
-                    opt.textContent = p;
-                    selectPhase.appendChild(opt);
+                    const opt = new Option(p, p);
+                    elements.selectPhase.appendChild(opt);
                 });
 
-                const selectTeam = document.getElementById('select-team');
-
-                function updateTeamDropdown(phaseVal) {
-                    selectTeam.innerHTML = '<option value="all">Toutes les équipes</option>';
-                    let filteredTeams = state.teams;
-
-                    if (phaseVal !== "all") {
-                        filteredTeams = state.teams.filter(t => {
-                            const tName = t.libequipe || t.libequ || t.libepr || t.lib || "";
-                            return tName.toLowerCase().includes(phaseVal.toLowerCase());
-                        });
-                    }
-
-                    filteredTeams.forEach((t) => {
-                        const idx = state.teams.indexOf(t);
-                        const tName = t.libequipe || t.libequ || t.libepr || t.lib || `Équipe ${idx + 1}`;
-                        const opt = document.createElement('option');
-                        opt.value = idx;
-                        opt.textContent = tName;
-                        selectTeam.appendChild(opt);
-                    });
-
-                    // Trigger change to load matchdays for the first valid D1 team of the filtered list, or just the first
-                    if (filteredTeams.length > 0) {
-                        const validTeam = filteredTeams.find(t => {
-                            let link = t.liendivision || t.liendiv || "";
-                            return typeof link === 'string' && link.includes('D1');
-                        }) || filteredTeams[0];
-
-                        if (validTeam) {
-                            selectTeam.value = state.teams.indexOf(validTeam);
-                            loadMatchdays(validTeam);
-                        }
-                    } else {
-                        document.getElementById('select-day').innerHTML = '<option value="">Sélectionnez une journée</option>';
-                    }
-                }
-
-                // Listen for phase change
-                selectPhase.onchange = () => {
-                    updateTeamDropdown(selectPhase.value);
-                };
-
-                // Listen for Team changes to refresh matchdays
-                selectTeam.onchange = () => {
-                    const idx = selectTeam.value;
-                    if (idx === "all") {
-                        const phaseVal = selectPhase.value;
-                        let filteredTeams = state.teams;
-                        if (phaseVal !== "all") {
-                            filteredTeams = state.teams.filter(t => {
-                                const n = t.libequipe || t.libequ || t.libepr || t.lib || "";
-                                return n.toLowerCase().includes(phaseVal.toLowerCase());
-                            });
-                        }
-                        const validTeam = filteredTeams.find(t => {
-                            let link = t.liendivision || t.liendiv || "";
-                            return typeof link === 'string' && link.includes('D1');
-                        }) || filteredTeams[0];
-
-                        if (validTeam) loadMatchdays(validTeam);
-                    } else {
-                        loadMatchdays(state.teams[idx]);
-                    }
-                };
-
-                // Auto Select latest phase if it exists, otherwise "all"
+                // Auto-selection dernière phase
                 if (phases.size > 0) {
-                    const latestPhase = Array.from(phases).sort().reverse()[0];
-                    selectPhase.value = latestPhase;
-                    updateTeamDropdown(latestPhase);
-                } else {
-                    updateTeamDropdown("all");
-                }
-            } else {
-                logDebug("Aucune clé 'equipe' dans le JSON. Vérifiez le panneau console (F12).", "error");
+                    const last = Array.from(phases).sort().reverse()[0];
+                    elements.selectPhase.value = last;
+                    updateTeamDropdown(last);
+                } else updateTeamDropdown("all");
             }
         }
 
+        function updateTeamDropdown(phase) {
+            elements.selectTeam.innerHTML = '<option value="all">Toutes les équipes</option>';
+            const filtered = (phase === "all") ? state.teams : 
+                state.teams.filter(t => (t.libequipe || "").includes(phase));
+
+            filtered.forEach(t => {
+                const opt = new Option(t.libequipe || 'Équipe', state.teams.indexOf(t));
+                elements.selectTeam.appendChild(opt);
+            });
+
+            // Auto-load matchdays for first team
+            if (filtered.length > 0) {
+                elements.selectTeam.value = state.teams.indexOf(filtered[0]);
+                loadMatchdays(filtered[0]);
+            }
+        }
+
+        function onTeamSelectionChange() {
+            const idx = elements.selectTeam.value;
+            if (idx === "all") {
+                // On prend la première équipe de la phase actuelle
+                const firstOpt = elements.selectTeam.options[1];
+                if (firstOpt) loadMatchdays(state.teams[firstOpt.value]);
+            } else {
+                loadMatchdays(state.teams[idx]);
+            }
+        }
+
+        /**
+         * CHARGEMENT DES JOURNÉES
+         */
         async function loadMatchdays(team) {
-            const teamName = team.libequipe || team.lib || team.libequ || "Équipe";
-            logDebug(`Chargement des journées pour l'équipe ${teamName}...`);
+            let divisionLink = team.liendivision || "";
+            const linkParams = new URLSearchParams(divisionLink.split('?')[1] || "");
+            const data = await apiRequest('getMatches', { 
+                divisionId: linkParams.get('D1') || '', 
+                pouleId: linkParams.get('cx_poule') || '' 
+            });
 
-            let divisionLink = team.liendivision || team.liendiv || "";
-            if (typeof divisionLink !== 'string') divisionLink = "";
-
-            const linkParams = new URLSearchParams(divisionLink.includes('?') ? divisionLink.split('?')[1] : divisionLink);
-            const divisionId = linkParams.get('D1') || '';
-            const pouleId = linkParams.get('cx_poule') || '';
-
-            const data = await fetchData('getMatches', { divisionId, pouleId });
-
-            const selectDay = document.getElementById('select-day');
-            selectDay.innerHTML = '<option value="">Sélectionnez une journée</option>';
-
+            elements.selectDay.innerHTML = '<option value="">Choisir une journée</option>';
             if (data && data.tour) {
-                const roundsList = Array.isArray(data.tour) ? data.tour : [data.tour];
-
-                // Filter only played rounds : scorea or scoreb must be a non-empty string
-                const playedRounds = roundsList.filter(r => {
-                    let sA = typeof r.scorea === 'string' ? r.scorea : '';
-                    let sB = typeof r.scoreb === 'string' ? r.scoreb : '';
-                    return sA.trim() !== '' || sB.trim() !== '';
+                const rounds = Array.isArray(data.tour) ? data.tour : [data.tour];
+                const played = rounds.filter(r => (r.scorea || "").trim() !== "" || (r.scoreb || "").trim() !== "");
+                
+                state.matchdays = played;
+                played.forEach((r, idx) => {
+                    const date = r.dateprevue || r.datereelle || '';
+                    const label = (r.libelle || `Tour ${idx+1}`) + (date ? ` (${date})` : '');
+                    elements.selectDay.appendChild(new Option(label, date || r.libelle));
                 });
 
-                state.matchdays = playedRounds;
-                logDebug(`${playedRounds.length} journées jouées trouvées.`);
-
-                const seenRounds = new Set();
-                playedRounds.forEach((round, idx) => {
-                    let d = (typeof round.dateprevue === 'string' ? round.dateprevue : '') ||
-                        (typeof round.datereelle === 'string' ? round.datereelle : '') || '';
-
-                    let tourExtracted = `Tour n°${idx + 1}`;
-                    const tourMatch = (typeof round.libelle === 'string' ? round.libelle : "").match(/tour n°\d+/i);
-                    if (tourMatch) tourExtracted = tourMatch[0];
-
-                    const key = `${tourExtracted}_${d}`;
-                    if (seenRounds.has(key)) return;
-                    seenRounds.add(key);
-
-                    const opt = document.createElement('option');
-                    opt.value = d || tourExtracted;
-                    opt.textContent = d ? `${tourExtracted} (${d})` : tourExtracted;
-                    selectDay.appendChild(opt);
-                });
-
-                // Select the last one by default
-                if (playedRounds.length > 0) {
-                    const lastIdx = playedRounds.length - 1;
-                    const lastRound = playedRounds[lastIdx];
-                    let lastD = (typeof lastRound.dateprevue === 'string' ? lastRound.dateprevue : '') ||
-                        (typeof lastRound.datereelle === 'string' ? lastRound.datereelle : '') || '';
-                    let lastTour = `Tour n°${lastIdx + 1}`;
-                    const lastTm = (typeof lastRound.libelle === 'string' ? lastRound.libelle : "").match(/tour n°\d+/i);
-                    if (lastTm) lastTour = lastTm[0];
-
-                    selectDay.value = lastD || lastTour;
+                if (played.length > 0) {
+                    const last = played[played.length - 1];
+                    elements.selectDay.value = last.dateprevue || last.datereelle || last.libelle;
                 }
-            } else {
-                logDebug("Aucune journée trouvée dans la réponse API.", "error");
             }
         }
 
+        /**
+         * GÉNÉRATION DES RÉSULTATS
+         */
         async function generateResults() {
-            const selectedDayVal = document.getElementById('select-day').value;
-            const selectedTeamIdx = document.getElementById('select-team').value;
+            const day = elements.selectDay.value;
+            if (!day) return showToast('Sélectionnez une journée.', true);
 
-            if (!selectedDayVal) return showToast('Veuillez sélectionner une journée.', true);
-
-
-            loader.style.display = 'block';
-            logDebug(`Génération des résultats...`);
-
-            resultsGrid.innerHTML = '';
+            elements.loader.style.display = 'block';
+            elements.resultsGrid.innerHTML = '';
             state.results = [];
 
-            let teamsToProcess = state.teams;
-            if (selectedTeamIdx !== "all") {
-                teamsToProcess = [state.teams[selectedTeamIdx]];
-            }
+            const teamIdx = elements.selectTeam.value;
+            const teamsToScan = (teamIdx === "all") ? 
+                Array.from(elements.selectTeam.options).slice(1).map(o => state.teams[o.value]) : 
+                [state.teams[teamIdx]];
 
-            const promises = teamsToProcess.map(async (team) => {
-                const getVal = (v) => typeof v === 'string' ? v.trim() : '';
-
-                const teamName = team.libequipe || team.libequ || team.libepr || team.lib || "Équipe";
-
-                let divisionLink = team.liendivision || team.liendiv || "";
-                if (typeof divisionLink !== 'string') divisionLink = "";
-
-                const categoryName = team.libdivision || team.libdiv || "Phase 2";
-
-                const linkParams = new URLSearchParams(divisionLink.includes('?') ? divisionLink.split('?')[1] : divisionLink);
-                const divisionId = linkParams.get('D1') || '';
-                const pouleId = linkParams.get('cx_poule') || '';
-
-                if (!divisionId || !pouleId) return;
-
-                const data = await fetchData('getMatches', { divisionId, pouleId });
+            const workers = teamsToScan.map(async (t) => {
+                const linkParams = new URLSearchParams((t.liendivision || "").split('?')[1] || "");
+                const data = await apiRequest('getMatches', { 
+                    divisionId: linkParams.get('D1'), 
+                    pouleId: linkParams.get('cx_poule') 
+                });
 
                 if (data && data.tour) {
-                    const allMatchesInPoule = Array.isArray(data.tour) ? data.tour : [data.tour];
-
-                    // Find the match in this poule that corresponds to this team AND the selected day/tour
-                    const matchFound = allMatchesInPoule.find((r, idx) => {
-                        let d = getVal(r.dateprevue) || getVal(r.datereelle) || '';
-                        let tExt = `Tour n°${idx + 1}`;
-                        const tm = getVal(r.libelle).match(/tour n°\d+/i);
-                        if (tm) tExt = tm[0];
-                        let rVal = d || tExt;
-
-                        if (rVal !== selectedDayVal) return false;
-
-                        // MUST match the team name
-                        const eA = getVal(r.equa).toLowerCase();
-                        const eB = getVal(r.equb).toLowerCase();
-                        const currentTeamSearch = teamName.toLowerCase();
-
-                        return eA.includes(currentTeamSearch) || currentTeamSearch.includes(eA) ||
-                            eB.includes(currentTeamSearch) || currentTeamSearch.includes(eB);
+                    const match = (Array.isArray(data.tour) ? data.tour : [data.tour]).find(r => {
+                        const rDay = r.dateprevue || r.datereelle || r.libelle;
+                        return rDay === day && (r.equa.includes(t.libequipe) || r.equb.includes(t.libequipe));
                     });
 
-                    if (matchFound) {
-                        let dMatch = getVal(matchFound.dateprevue) || getVal(matchFound.datereelle) || 'N/A';
-                        let lienMatch = getVal(matchFound.lien);
-                        let sA = getVal(matchFound.scorea);
-                        let sB = getVal(matchFound.scoreb);
-
-                        let parseA = parseInt(sA);
-                        let parseB = parseInt(sB);
-                        if (isNaN(parseA)) parseA = 0;
-                        if (isNaN(parseB)) parseB = 0;
-
-                        const isHome = getVal(matchFound.equa).toLowerCase().includes(teamName.toLowerCase()) ||
-                            teamName.toLowerCase().includes(getVal(matchFound.equa).toLowerCase());
-
+                    if (match) {
+                        const isHome = match.equa.includes(t.libequipe);
                         state.results.push({
-                            teamName: teamName,
-                            category: categoryName,
-                            opponent: isHome ? getVal(matchFound.equb) : getVal(matchFound.equa),
-                            score: parseA + ' - ' + parseB,
-                            scoreA: parseA,
-                            scoreB: parseB,
-                            isHome: isHome,
-                            date: dMatch,
-                            detailLink: lienMatch,
-                            divisionId: divisionId,
-                            pouleId: pouleId,
-                            originalIndex: state.results.length // Add this to keep track
+                            teamName: t.libequipe,
+                            category: t.libdivision || "Championnat",
+                            opponent: isHome ? match.equb : match.equa,
+                            scoreA: parseInt(match.scorea) || 0,
+                            scoreB: parseInt(match.scoreb) || 0,
+                            isHome,
+                            date: match.dateprevue || match.datereelle || 'N/A',
+                            detailLink: match.lien,
+                            divisionId: linkParams.get('D1'),
+                            pouleId: linkParams.get('cx_poule')
                         });
                     }
                 }
             });
 
-            await Promise.all(promises);
-            loader.style.display = 'none';
-
-            logDebug(`Résultats chargés : ${state.results.length} rencontres.`);
-            renderResults();
+            await Promise.all(workers);
+            elements.loader.style.display = 'none';
+            renderResultsGrid();
         }
 
-        function renderResults() {
+        function renderResultsGrid() {
             if (state.results.length === 0) {
-                resultsGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; opacity: 0.5; padding: 4rem;">Aucun match trouvé pour cette journée.</div>';
+                elements.resultsGrid.innerHTML = '<div class="empty-msg">Aucun résultat trouvé.</div>';
                 return;
             }
 
-            resultsGrid.innerHTML = state.results.map((res, index) => {
-                let statusClass = 'draw';
-                let statusText = 'NUL';
-
+            elements.resultsGrid.innerHTML = state.results.map((res, i) => {
                 const myScore = res.isHome ? res.scoreA : res.scoreB;
                 const opScore = res.isHome ? res.scoreB : res.scoreA;
-
-                if (myScore > opScore) { statusClass = 'win'; statusText = 'VICTOIRE'; }
-                else if (myScore < opScore) { statusClass = 'loss'; statusText = 'DÉFAITE'; }
-
-                if (myScore === 0 && opScore === 0) { statusClass = 'draw'; statusText = 'À VENIR'; }
+                const status = (myScore > opScore) ? 'win' : (myScore < opScore ? 'loss' : 'draw');
+                const label = (myScore === 0 && opScore === 0) ? 'À VENIR' : (status === 'win' ? 'VICTOIRE' : (status === 'loss' ? 'DÉFAITE' : 'NUL'));
 
                 return `
-                <div class="result-card ${statusClass}" style="animation-delay: ${index * 0.1}s">
+                <div class="result-card ${status}">
                     <div class="card-header">
                         <span class="category">${res.category}</span>
-                        <span class="status-badge status-${statusClass}">${statusText}</span>
+                        <span class="status-badge status-${status}">${label}</span>
                     </div>
                     <div class="team-name">${res.teamName}</div>
                     <div class="match-info">
-                        <div class="opponent" style="text-align: left;">${res.isHome ? res.teamName : res.opponent}</div>
-                        <div class="score-box">
-                            <div class="score ${statusClass}">${res.score}</div>
-                        </div>
-                        <div class="opponent">${res.isHome ? res.opponent : res.teamName}</div>
+                        <div class="side">${res.isHome ? res.teamName : res.opponent}</div>
+                        <div class="score-box"><div class="score ${status}">${res.scoreA} - ${res.scoreB}</div></div>
+                        <div class="side">${res.isHome ? res.opponent : res.teamName}</div>
                     </div>
                     <div class="card-footer">
-                        <span class="match-date"><i class="far fa-calendar-alt"></i> ${res.date}</span>
-                        ${res.detailLink ? `<button class="secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="showMatchDetails(${index})">Détails</button>` : ''}
+                        <span><i class="far fa-calendar-alt"></i> ${res.date}</span>
+                        <button class="secondary" onclick="fetchMatchDetail(${i})">Détails</button>
                     </div>
-                </div>
-            `;
+                </div>`;
             }).join('');
         }
 
-        async function showMatchDetails(index) {
+        /**
+         * DÉTAILS ET EXPORT
+         */
+        async function fetchMatchDetail(index) {
             const res = state.results[index];
-            if (!res.detailLink) return;
+            elements.loader.style.display = 'block';
+            
+            const params = new URLSearchParams(res.detailLink.split('?')[1] || "");
+            const data = await apiRequest('getMatchDetails', { 
+                is_retour: params.get('is_retour') || '0', 
+                renc_id: params.get('renc_id') || params.get('res_id')
+            });
 
-            loader.style.display = 'block';
-            logDebug(`Récupération des détails du match... [ID: ${index}]`);
-
-            const linkParams = new URLSearchParams(res.detailLink.includes('?') ? res.detailLink.split('?')[1] : res.detailLink);
-            const is_retour = linkParams.get('is_retour') || '0';
-            const renc_id = linkParams.get('renc_id') || linkParams.get('res_id') || '';
-
-            try {
-                const data = await fetchData('getMatchDetails', { is_retour, renc_id });
-
-                if (data && data.resultat) {
-                    logDebug(`Détails récupérés, génération du rapport...`);
-                    loader.style.display = 'none';
-                    renderPremiumExport(res, data);
-                } else {
-                    throw new Error("Format de données invalide");
-                }
-            } catch (err) {
-                console.error(err);
-                loader.style.display = 'none';
-                logDebug(`Erreur : ${err.message}`);
-                showToast('Erreur lors de la récupération des détails.', true);
-            }
+            elements.loader.style.display = 'none';
+            if (data && data.resultat) renderExportPanel(res, data);
+            else showToast('Impossible de charger les détails.', true);
         }
 
-        function renderPremiumExport(res, details) {
-            const p = details.resultat;
-            const equipeA = p.equa || 'Equipe A';
-            const equipeB = p.equb || 'Equipe B';
-            let tmpScoreA = parseInt(p.scorea);
-            let tmpScoreB = parseInt(p.scoreb);
-            let API_SCORE_A = isNaN(tmpScoreA) ? 0 : tmpScoreA;
-            let API_SCORE_B = isNaN(tmpScoreB) ? 0 : tmpScoreB;
+        function renderExportPanel(res, data) {
+            const detail = data.resultat;
+            const players = Array.isArray(data.joueur) ? data.joueur : [data.joueur].filter(Boolean);
+            const matches = Array.isArray(data.partie) ? data.partie : [data.partie].filter(Boolean);
 
-            const panel = document.getElementById('export-panel');
+            // Calculs et Parsing...
+            const parsed = parseMatchData(res, players, matches);
 
-            // Team Composition
-            let jouas = [];
-            let joubs = [];
-            const joueursArray = Array.isArray(details.joueur) ? details.joueur : (details.joueur ? [details.joueur] : []);
-
-            let equipeAPoints = 0;
-            let equipeBPoints = 0;
-
-            function parseClassement(str) {
-                if (!str) return { text: '', raw: 0 };
-                let points = 0;
-                let text = '';
-
-                // Check for National Rank
-                let natMatch = str.match(/(?:N°|N)\s*(\d+)/i);
-                let natRank = natMatch ? natMatch[1] : null;
-
-                // Extract the points
-                let nums = [...str.matchAll(/\d+/g)].map(m => parseInt(m[0], 10));
-                if (nums.length > 0) {
-                    if (natRank) {
-                        let c = nums.filter(n => n.toString() !== natRank);
-                        points = c.length > 0 ? c[c.length - 1] : 0;
-                    } else {
-                        points = nums[nums.length - 1]; // typically the only number: "1450 M" or "M 1450"
-                    }
-                }
-
-                if (points) {
-                    text = points.toString();
-                    if (natRank) text = `(n°${natRank}) ` + text;
-                } else if (natRank) {
-                    text = `(n°${natRank})`;
-                }
-
-                return { text: text, raw: points };
-            }
-
-            joueursArray.forEach(j => {
-                let nA = (j.xja || '').replace(/\s*[MF]\s*$/, '').trim();
-                let nB = (j.xjb || '').replace(/\s*[MF]\s*$/, '').trim();
-
-                let pA = parseClassement(j.xca || '');
-                let pB = parseClassement(j.xcb || '');
-
-                // Captain check
-                let isCapA = nA.toLowerCase().includes(' cap') || j.xca === 'cap' || j.capa === '1';
-                let isCapB = nB.toLowerCase().includes(' cap') || j.xcb === 'cap' || j.capb === '1';
-
-                nA = nA.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim();
-                nB = nB.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim();
-
-                if (nA) jouas.push({ nom: nA, classement: pA.text || '', rawPoints: pA.raw, isCap: isCapA });
-                if (nB) joubs.push({ nom: nB, classement: pB.text || '', rawPoints: pB.raw, isCap: isCapB });
-            });
-
-            // Fallback: extract unique players from matches if details.joueur is empty
-            if (jouas.length === 0 && joubs.length === 0) {
-                const tempA = new Set();
-                const tempB = new Set();
-                const parties = Array.isArray(details.partie) ? details.partie : (details.partie ? [details.partie] : []);
-                parties.forEach(m => {
-                    if (m.ja && m.ja.trim() && m.ja !== '-') {
-                        let trimA = m.ja.replace(/\s*[MF]\s*$/, '').trim();
-                        tempA.add(trimA);
-                    }
-                    if (m.jb && m.jb.trim() && m.jb !== '-') {
-                        let trimB = m.jb.replace(/\s*[MF]\s*$/, '').trim();
-                        tempB.add(trimB);
-                    }
-                });
-                jouas = Array.from(tempA).map(nom => ({ nom, classement: '', rawPoints: 0, isCap: false }));
-                joubs = Array.from(tempB).map(nom => ({ nom, classement: '', rawPoints: 0, isCap: false }));
-            }
-
-            jouas.forEach(j => { equipeAPoints += j.rawPoints || 0; });
-            joubs.forEach(j => { equipeBPoints += j.rawPoints || 0; });
-
-            let compoHTML = `
-            <div class="section-title">La composition des équipes</div>
-            <table class="premium-table">
-                <thead>
-                    <tr>
-                        <th style="padding: 1rem;">${equipeA}</th>
-                        <th style="padding: 1rem;">${equipeB}</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-            for (let i = 0; i < Math.max(jouas.length, joubs.length); i++) {
-                let htmlA = '';
-                if (jouas[i]) {
-                    let nomHTML = jouas[i].isCap ? `<b>${jouas[i].nom}</b>` : jouas[i].nom;
-                    htmlA = `<div style="display:flex; justify-content:space-between;"><span>${nomHTML}</span><span>${jouas[i].classement}</span></div>`;
-                }
-                let htmlB = '';
-                if (joubs[i]) {
-                    let nomHTML = joubs[i].isCap ? `<b>${joubs[i].nom}</b>` : joubs[i].nom;
-                    htmlB = `<div style="display:flex; justify-content:space-between;"><span>${nomHTML}</span><span>${joubs[i].classement}</span></div>`;
-                }
-
-                compoHTML += `
-                <tr>
-                    <td>${htmlA}</td>
-                    <td>${htmlB}</td>
-                </tr>
+            // Construction HTML de l'export
+            elements.exportPanel.innerHTML = `
+                <div class="export-actions">
+                    <button onclick="copyHTMLForWordPress()" class="btn-primary">📄 Copier HTML (WP)</button>
+                    <button onclick="elements.exportContainer.style.display='none'" class="secondary">Fermer</button>
+                </div>
+                <div class="export-header">
+                    <div class="export-title">${detail.equa} – ${detail.equb}</div>
+                    <div class="export-subtitle">${res.category}</div>
+                    ${generateScoreboardHTML(detail)}
+                </div>
+                ${generateCompositionTable(detail.equa, detail.equb, parsed.teamA, parsed.teamB)}
+                ${generatePartiesTable(detail.equa, detail.equb, parsed.matches, res.isHome)}
+                <div class="match-sets-sum">
+                    <span>Points : ${parsed.totals.pointsA} / ${parsed.totals.pointsB}</span>
+                    <span>Manches : ${parsed.totals.setsA} - ${parsed.totals.setsB}</span>
+                </div>
+                ${generateIndividualStats(parsed.stats, parsed.clubRatings)}
+                <div class="summary-footer">
+                    Bilan : ${detail.scorea > detail.scoreb ? detail.equa : (detail.scoreb > detail.scorea ? detail.equb : 'Match nul')} l'emporte.
+                </div>
             `;
-            }
 
-            // Match Sheet (Parties)
-            const parties = Array.isArray(details.partie) ? details.partie : (details.partie ? [details.partie] : []);
-
-            // POINT CALCULATION LOGIC
-            function getPointsGained(ratingA, ratingB, wonA) {
-                if (!ratingA || !ratingB) return 0;
-                const diff = ratingA - ratingB;
-                const absoluteDiff = Math.abs(diff);
-                let gain = 0;
-
-                // Simple standard FFTT table approximation for 2024
-                if (wonA) { // Victory
-                    if (diff >= 500) gain = 0.5;
-                    else if (diff >= 400) gain = 1;
-                    else if (diff >= 300) gain = 2;
-                    else if (diff >= 200) gain = 3;
-                    else if (diff >= 100) gain = 4;
-                    else if (diff >= 0) gain = 5;
-                    else if (diff >= -24) gain = 6;
-                    else if (diff >= -49) gain = 7;
-                    else if (diff >= -99) gain = 8;
-                    else if (diff >= -149) gain = 10;
-                    else if (diff >= -199) gain = 13;
-                    else if (diff >= -249) gain = 17;
-                    else if (diff >= -299) gain = 22;
-                    else if (diff >= -399) gain = 28;
-                    else gain = 40;
-                } else { // Loss
-                    if (diff >= 400) gain = -40;
-                    else if (diff >= 300) gain = -28;
-                    else if (diff >= 250) gain = -22;
-                    else if (diff >= 200) gain = -17;
-                    else if (diff >= 150) gain = -13;
-                    else if (diff >= 100) gain = -10;
-                    else if (diff >= 50) gain = -8;
-                    else if (diff >= 25) gain = -7;
-                    else if (diff >= 0) gain = -6;
-                    else if (diff >= -99) gain = -5;
-                    else if (diff >= -199) gain = -4;
-                    else if (diff >= -299) gain = -3;
-                    else if (diff >= -399) gain = -2;
-                    else if (diff >= -499) gain = -1;
-                    else gain = -0.5;
-                }
-                return gain;
-            }
-
-            let totalGainedClub = 0;
-            const clubStats = {}; // To store points per local player
-
-            // ONLY include OUR club players in stats
-            const ourPlayers = res.isHome ? jouas : joubs;
-            ourPlayers.forEach(j => {
-                if (j.nom) clubStats[j.nom.trim()] = { ptsMatch: 0, doubleResult: '-' };
-            });
-
-            compoHTML += `
-                <tr class="compo-total-row" style="background: #f1f5f9; font-weight: 700; font-size: 0.85rem; color: #475569; text-align: center; text-transform: uppercase;">
-                    <td style="padding: 0.5rem 1rem;">TOTAL POINTS EQUIPE : ${equipeAPoints}</td>
-                    <td style="padding: 0.5rem 1rem;">TOTAL POINTS EQUIPE : ${equipeBPoints}</td>
-                </tr>
-        `;
-            compoHTML += `</tbody></table>`;
-            let totalSetsA = 0;
-            let totalSetsB = 0;
-            let matchesWonA = 0;
-            let matchesWonB = 0;
-            let totalPointsA = 0;
-            let totalPointsB = 0;
-            let partiesHTML = '';
-
-            parties.forEach(m => {
-                const getStr = (v) => typeof v === 'string' ? v.trim() : (typeof v === 'number' ? String(v) : '');
-                let jA = getStr(m.ja) || '-';
-                let jB = getStr(m.jb) || '-';
-
-                // Sometimes scores are in scorea/scoreb, other times they must be inferred from the detail string
-                let strA = getStr(m.scorea);
-                let strB = getStr(m.scoreb);
-                let sA = parseInt(strA) || 0;
-                let sB = parseInt(strB) || 0;
-                if (isNaN(sA)) sA = 0;
-                if (isNaN(sB)) sB = 0;
-
-                // Check for detail string like "09-11 11-08 ..." or separate m.ms1
-                let sets = ['', '', '', '', ''];
-
-                // Populate sets from API structure (could be in m.detail or m.ms1, ms2 etc.)
-                if (m.detail && typeof m.detail === 'string') {
-                    const s = m.detail.split(' ');
-                    for (let i = 0; i < Math.min(s.length, 5); i++) {
-                        sets[i] = s[i];
-                    }
-                } else {
-                    sets[0] = getStr(m.ms1);
-                    sets[1] = getStr(m.ms2);
-                    sets[2] = getStr(m.ms3);
-                    sets[3] = getStr(m.ms4);
-                    sets[4] = getStr(m.ms5);
-                }
-
-                // Calculate sets won
-                let setsWA = 0, setsWB = 0;
-                let hasValidSets = false;
-                sets.forEach(setStr => {
-                    if (!setStr) return;
-
-                    if (setStr.includes('-') && setStr.indexOf('-') > 0) {
-                        const parts = setStr.split('-');
-                        if (parts.length === 2) {
-                            const p1 = parseInt(parts[0]), p2 = parseInt(parts[1]);
-                            if (!isNaN(p1) && !isNaN(p2)) {
-                                if (p1 > p2) setsWA++; else if (p2 > p1) setsWB++;
-                                hasValidSets = true;
-                            }
-                        }
-                    } else {
-                        // FFTT often provides implicit scores where positive means Team A won and negative means Team B won
-                        const val = parseInt(setStr);
-                        if (!isNaN(val)) {
-                            if (val < 0) setsWB++; else setsWA++;
-                            hasValidSets = true;
-                        }
-                    }
-                });
-
-                // Use calculated sets won if available, else fallback to API game points (1/0)
-                let finalSA = hasValidSets ? setsWA : sA;
-                let finalSB = hasValidSets ? setsWB : sB;
-
-                totalSetsA += finalSA;
-                totalSetsB += finalSB;
-
-                const styleA = finalSA > finalSB ? 'font-weight: bold; color: #0f172a;' : '';
-                const styleB = finalSB > finalSA ? 'font-weight: bold; color: #0f172a;' : '';
-
-                // NEW SCORING LOGIC ACCUMULATION
-                let pointsSummaryA = 0;
-                let pointsSummaryB = 0;
-
-                sets.forEach(setStr => {
-                    const val = parseInt(setStr);
-                    if (isNaN(val)) return;
-
-                    if (val > 0) { // Team A wins set (input is Team B's points, e.g. 8 for 11-8)
-                        pointsSummaryA += (val < 10) ? 11 : (val + 2);
-                        pointsSummaryB += val;
-                    } else if (val < 0) { // Team B wins set (input is -8 for 8-11)
-                        const absVal = Math.abs(val);
-                        pointsSummaryA += absVal;
-                        pointsSummaryB += (absVal < 10) ? 11 : (absVal + 2);
-                    }
-                });
-
-                totalPointsA += pointsSummaryA;
-                totalPointsB += pointsSummaryB;
-
-
-                // The badge should be green only if the club's team won this row
-                const isWinForClub = res.isHome ? (finalSA > finalSB) : (finalSB > finalSA);
-
-                // Calculate match points gained
-                let rowPoints = 0;
-                if (jA && jB && jA !== '-' && jB !== '-' && !jA.toLowerCase().includes('double') && !jB.toLowerCase().includes('double')) {
-                    // Find ratings
-                    const playerA = jouas.find(p => p.nom === jA);
-                    const playerB = joubs.find(p => p.nom === jB);
-                    if (playerA && playerB && playerA.rawPoints && playerB.rawPoints) {
-                        let gainA = getPointsGained(playerA.rawPoints, playerB.rawPoints, finalSA > finalSB);
-                        let gainB = getPointsGained(playerB.rawPoints, playerA.rawPoints, finalSB > finalSA);
-
-                        // rowPoints is relative to our club's team for individual +/- stats
-                        rowPoints = res.isHome ? gainA : gainB;
-
-                        if (res.isHome) {
-                            if (clubStats[jA]) clubStats[jA].ptsMatch += rowPoints;
-                        } else {
-                            if (clubStats[jB]) clubStats[jB].ptsMatch += rowPoints;
-                        }
-                        totalGainedClub += rowPoints;
-                    }
-                } else if (jA.toLowerCase().includes('double')) {
-                    // Double Detection: looking for "/" as separator
-                    const isDoubleWin = (finalSA > finalSB);
-                    [jA, jB].forEach((doubleStr, isSideB) => {
-                        doubleStr.split(/[\/\&]/).forEach(namePart => {
-                            const clean = namePart.trim();
-                            if (!clean) return;
-                            // Find this player in our clubStats (which only contains our players)
-                            const matched = Object.keys(clubStats).find(k => k.toLowerCase().includes(clean.toLowerCase()) || clean.toLowerCase().includes(k.toLowerCase()));
-                            if (matched) {
-                                // If isSideB=false, player is in Team A. If isSideB=true, player is in Team B.
-                                const won = isSideB ? !isDoubleWin : isDoubleWin;
-                                clubStats[matched].doubleResult = won ? 'V' : 'D';
-                            }
-                        });
-                    });
-                }
-
-                // Total Points Calculation for the scoreboard footer handled above by accumulation logic
-
-
-
-                partiesHTML += `
-                <tr>
-                    <td style="${styleA}">${jA}</td>
-                    <td style="${styleB}">${jB}</td>
-                    <td class="col-set">${sets[0]}</td>
-                    <td class="col-set">${sets[1]}</td>
-                    <td class="col-set">${sets[2]}</td>
-                    <td class="col-set">${sets[3]}</td>
-                    <td class="col-set">${sets[4]}</td>
-                    <td class="col-score">
-                        <span class="${isWinForClub ? 'badge-win' : 'badge-loss'}">${finalSA}-${finalSB}</span>
-                    </td>
-                    <td style="text-align: center; font-size: 0.75rem; font-weight: bold; color: ${rowPoints > 0 ? '#10b981' : (rowPoints < 0 ? '#ef4444' : '#64748b')}">
-                        ${rowPoints > 0 ? '+' : ''}${rowPoints !== 0 ? rowPoints : ''}
-                    </td>
-                </tr>
-            `;
-            });
-            partiesHTML = `
-            <div class="section-title">La feuille de rencontre</div>
-            <table class="premium-table">
-                <thead>
-                    <tr>
-                        <th class="col-player">${equipeA}</th>
-                        <th class="col-player">${equipeB}</th>
-                        <th class="col-set">1</th>
-                        <th class="col-set">2</th>
-                        <th class="col-set">3</th>
-                        <th class="col-set">4</th>
-                        <th class="col-set">5</th>
-                        <th class="col-score">S.</th>
-                        <th style="width: 50px; text-align: center; font-size: 0.7rem;">+/-</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${partiesHTML}
-                </tbody>
-            </table>`;
-
-            // Individual Stats Calculation (STRICTLY ONLY for our club players)
-            const stats = {};
-            Object.keys(clubStats).forEach(name => {
-                stats[name] = { v: 0, d: 0, pts: 0 };
-            });
-
-            parties.forEach(m => {
-                const getStr = (v) => typeof v === 'string' ? v.trim() : '';
-                const sA = parseInt(getStr(m.scorea)) || 0;
-                const sB = parseInt(getStr(m.scoreb)) || 0;
-                let ja = getStr(m.ja);
-                let jb = getStr(m.jb);
-
-                if (ja) {
-                    // Look for an EXACT match or a very close one only in OUR player list
-                    let matched = Object.keys(stats).find(k => ja.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(ja.toLowerCase()));
-                    if (matched) {
-                        if (sA > sB) stats[matched].v++; else stats[matched].d++;
-                    }
-                }
-                if (jb) {
-                    let matched = Object.keys(stats).find(k => jb.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(jb.toLowerCase()));
-                    if (matched) {
-                        if (sB > sA) stats[matched].v++; else stats[matched].d++;
-                    }
-                }
-            });
-
-            let statsHTML = `
-            <div class="section-title">Statistiques individuelles</div>
-            <table class="premium-table">
-                <thead>
-                    <tr>
-                        <th>Joueur</th>
-                        <th>Victoire</th>
-                        <th>Défaite</th>
-                        <th>Points</th>
-                        <th>Double</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-            Object.keys(stats).forEach(name => {
-                const s = stats[name];
-                const c = clubStats[name] || { ptsMatch: 0, doubleResult: '-' };
-                statsHTML += `
-                <tr>
-                    <td>${name}</td>
-                    <td>${s.v}</td>
-                    <td>${s.d}</td>
-                    <td style="font-weight: bold; color: ${c.ptsMatch > 0 ? '#10b981' : (c.ptsMatch < 0 ? '#ef4444' : '#64748b')}">
-                        ${c.ptsMatch > 0 ? '+' : ''}${c.ptsMatch.toFixed(1)}
-                    </td>
-                    <td style="font-weight: bold; color: ${c.doubleResult === 'V' ? '#10b981' : (c.doubleResult === 'D' ? '#ef4444' : '#64748b')}">
-                        ${c.doubleResult}
-                    </td>
-                </tr>
-            `;
-            });
-            statsHTML += `</tbody></table>`;
-
-            let finalTeamScoreA = res.scoreA || API_SCORE_A;
-            let finalTeamScoreB = res.scoreB || API_SCORE_B;
-
-            // Outcome Points: 3 for Win, 2 for Draw, 1 for Loss
-            let outcomeA = 2;
-            let outcomeB = 2;
-            if (finalTeamScoreA > finalTeamScoreB) { outcomeA = 3; outcomeB = 1; }
-            else if (finalTeamScoreA < finalTeamScoreB) { outcomeA = 1; outcomeB = 3; }
-
-            // Premium Scoreboard HTML: [OutcomeA][ScoreA] vs [ScoreB][OutcomeB]
-            const scoreboardHTML = `
-            <div class="premium-scoreboard" style="align-items: center;">
-                <div class="score-digit-box digit-red" style="width: 40px; height: 56px; font-size: 2rem;">${outcomeA}</div>
-                <div class="score-digit-box digit-black" style="width: auto; min-width: 70px; padding: 0 10px;">${finalTeamScoreA}</div>
-                <div class="score-divider"></div>
-                <div class="score-digit-box digit-black" style="width: auto; min-width: 70px; padding: 0 10px;">${finalTeamScoreB}</div>
-                <div class="score-digit-box digit-red" style="width: 40px; height: 56px; font-size: 2rem;">${outcomeB}</div>
-            </div>
-        `;
-
-            panel.innerHTML = `
-            <div style="position: absolute; top: 1rem; right: 1rem; display: flex; gap: 0.5rem;">
-                <button onclick="copyHTMLForWordPress()" style="padding: 0.5rem 1rem; border-radius: 8px; background: #1d3557; color: white; border: none; cursor: pointer; font-weight: bold; font-size: 0.8rem;">📄 Copier HTML (WP)</button>
-                <button onclick="document.getElementById('export-container').style.display='none'" style="padding: 0.5rem 1rem; border-radius: 8px; background: #e2e8f0; color: #475569; border: none; cursor: pointer; font-weight: bold; box-shadow: none;">X Fermer</button>
-            </div>
-            <div class="export-header">
-                <div class="export-title">${equipeA} –<br>${equipeB}</div>
-                <div class="export-subtitle">${res.category}</div>
-                ${scoreboardHTML}
-            </div>
-            ${compoHTML}
-            ${partiesHTML}
-            <div class="match-sets-sum">
-                <span style="margin-right: 1.5rem;">Les points : ${totalPointsA} / ${totalPointsB}</span>
-                Les manches : ${totalSetsA} - ${totalSetsB}
-            </div>
-            ${statsHTML}
-            <div id="league-ranking-container"></div>
-            <div class="summary-footer">
-                Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}
-            </div>
-        `;
-
-            // Fetch League Ranking in background
-            if (res.divisionId && res.pouleId) {
-                fetchData('getClassement', { divisionId: res.divisionId, pouleId: res.pouleId }).then(data => {
-                    if (data && data.classement) {
-                        const list = Array.isArray(data.classement) ? data.classement : [data.classement];
-                        // Find our team
-                        const myEntry = list.find(e => e.equipe && e.equipe.toLowerCase().includes(res.teamName.toLowerCase()));
-                        if (myEntry) {
-                            const rankDiv = document.getElementById('league-ranking-container');
-                            if (rankDiv) {
-                                rankDiv.innerHTML = `
-                                <div class="section-title">Bilan de la poule</div>
-                                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
-                                    <div>
-                                        <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Classement Actuel</div>
-                                        <div style="font-size: 1.5rem; font-weight: 800; color: #1e293b;">${myEntry.rang}<sup>${myEntry.rang == 1 ? 'er' : 'ème'}</sup> / ${list.length}</div>
-                                    </div>
-                                    <div style="text-align: right;">
-                                        <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Bilan Saison</div>
-                                        <div style="font-size: 1.1rem; color: #334155; font-weight: 600;">
-                                            <span style="color: #10b981;">${myEntry.vic}V</span> - 
-                                            <span style="color: #64748b;">${myEntry.nul}N</span> - 
-                                            <span style="color: #ef4444;">${myEntry.def}D</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Show panel
-            const exportContainer = document.getElementById('export-container');
-            exportContainer.style.display = 'block';
-            exportContainer.style.left = '50%';
-            exportContainer.style.transform = 'translateX(-50%)';
-            exportContainer.style.top = '100px';
-            exportContainer.style.zIndex = '5000';
-            exportContainer.style.position = 'absolute';
-            panel.style.display = 'block';
-            panel.style.position = 'relative';
-
+            elements.exportContainer.style.cssText = "display: block; position: absolute; left: 50%; transform: translateX(-50%); top: 100px; z-index: 5000;";
             window.scrollTo(0, document.body.scrollHeight);
         }
 
-        btnGenerate.onclick = generateResults;
-
-        btnCapture.onclick = () => {
-            if (state.results.length === 0) return showToast('Générez d\'abord les résultats.', true);
-            if (state.results.length === 1) {
-                showMatchDetails(0);
-            } else {
-                showToast('Cliquez sur "Détails" spécifique pour voir le rapport.', true);
-            }
-        };
-
-        btnCopyText.onclick = () => {
-            if (state.results.length === 0) return showToast('Générez d\'abord les résultats.', true);
-
-            const dayLabel = document.getElementById('select-day').value;
-            let text = `🏓 RÉSULTATS ${dayLabel} - ${new Date().toLocaleDateString('fr-FR')} 🏓\n\n`;
-
-            state.results.forEach(res => {
-                const winIcon = (res.isHome && res.scoreA > res.scoreB) || (!res.isHome && res.scoreB > res.scoreA) ? '✅' :
-                    ((res.isHome && res.scoreA < res.scoreB) || (!res.isHome && res.scoreB < res.scoreA) ? '❌' : '🤝');
-
-                if (res.scoreA === 0 && res.scoreB === 0) {
-                    text += `🔸 ${res.teamName} vs ${res.opponent} (Pas encore joué)\n`;
-                } else {
-                    text += `${winIcon} ${res.teamName} [${res.score}] vs ${res.opponent}\n`;
-                }
+        /**
+         * SOUS-FONCTIONS DE PARSING (Logique métier extraite)
+         */
+        function parseMatchData(res, rawPlayers, rawMatches) {
+            const teamA = [], teamB = [];
+            const clubRatings = {};
+            
+            rawPlayers.forEach(j => {
+                const parse = (n, c) => ({ 
+                    nom: (n||'').replace(/\s*[MF]\s*$/, '').trim(), 
+                    pts: parseInt((c||'').match(/\d+/)) || 0 
+                });
+                const a = parse(j.xja, j.xca);
+                const b = parse(j.xjb, j.xcb);
+                if (a.nom) teamA.push(a);
+                if (b.nom) teamB.push(b);
             });
 
-            navigator.clipboard.writeText(text).then(() => {
-                showToast('Résultats texte copiés !');
+            // On stocke les classements de NOS joueurs pour le calcul des points
+            const ourList = res.isHome ? teamA : teamB;
+            ourList.forEach(p => clubRatings[p.nom] = p.pts);
+
+            let setsA = 0, setsB = 0, ptsA = 0, ptsB = 0;
+            const stats = {};
+
+            const processedMatches = rawMatches.map(m => {
+                const s = [m.ms1, m.ms2, m.ms3, m.ms4, m.ms5].map(v => parseInt(v) || 0);
+                let swA = 0, swB = 0;
+                
+                s.forEach(val => {
+                    if (val === 0) return;
+                    if (val > 0) { swA++; ptsA += (val<10?11:val+2); ptsB += val; }
+                    else { swB++; ptsB += (Math.abs(val)<10?11:Math.abs(val)+2); ptsA += Math.abs(val); }
+                });
+
+                setsA += swA; setsB += swB;
+                
+                // Calcul +/- individuel (FFTT 2024 simplifié)
+                const ptA = clubRatings[m.ja] ? calculateGain(clubRatings[m.ja], clubRatings[m.jb], swA > swB) : 0;
+                const ptB = clubRatings[m.jb] ? calculateGain(clubRatings[m.jb], clubRatings[m.ja], swB > swA) : 0;
+
+                // Accumulation stats
+                [ {n: m.ja, w: swA>swB, p: ptA}, {n: m.jb, w: swB>swA, p: ptB} ].forEach(obj => {
+                    if (clubRatings[obj.n]) {
+                        if (!stats[obj.n]) stats[obj.n] = { v: 0, d: 0, pts: 0 };
+                        if (obj.w) stats[obj.n].v++; else stats[obj.n].d++;
+                        stats[obj.n].pts += obj.p;
+                    }
+                });
+
+                return { ...m, swA, swB, gain: res.isHome ? ptA : ptB, sets: s };
             });
-        };
 
-        function getWordPressCSS() {
-            return `
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap');
-
-.ttcav-export-wrapper { 
-    font-family: 'Outfit', sans-serif; 
-    line-height: 1.6;
-    color: #1e293b;
-    background: #ffffff;
-}
-
-.export-header { text-align: center; margin-bottom: 2.5rem; }
-.export-title { font-size: 20px; font-size: 2rem; font-weight: 800; color: #1e293b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: -0.02em; }
-.export-subtitle { font-size: 1.2rem; color: #64748b; margin-bottom: 25px; font-weight: 500; }
-
-.premium-scoreboard { display: flex; justify-content: center; gap: 12px; background: #0f172a; padding: 25px; border-radius: 16px; width: fit-content; margin: 0 auto; color: white; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }
-.score-digit-box { background: #ffffff; color: #0f172a; width: 50px; height: 70px; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; font-weight: 900; border-radius: 8px; border: 3px solid #334155; font-family: 'Arial Black', Gadget, sans-serif; }
-.digit-red { color: #e11d48; }
-.score-divider { width: 20px; }
-
-.section-title { font-size: 1.4rem; font-weight: 800; margin: 3.5rem 0 1.5rem; color: #1e293b; text-align: center; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; }
-
-.premium-table { width: 100% !important; border-collapse: separate; border-spacing: 0; margin-bottom: 2.5rem; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-.premium-table th { background: #f8fafc; color: #475569; text-align: left; padding: 14px 18px; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.025em; }
-.premium-table td { padding: 12px 18px; border-bottom: 1px solid #f1f5f9; color: #1e293b; font-size: 0.95rem; }
-.premium-table tr:last-child td { border-bottom: none; }
-.premium-table tr:nth-child(even) { background: #f8fafc; }
-
-.col-player { width: 35%; font-weight: 600; }
-.col-set { width: 8%; text-align: center; color: #94a3b8; font-weight: 500; }
-.col-score { width: 10%; text-align: center; font-weight: 800; color: #0f172a; }
-
-.badge-win { background: #dcfce7; color: #166534; padding: 5px 12px; border-radius: 9999px; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; }
-.badge-loss { background: #fee2e2; color: #991b1b; padding: 5px 12px; border-radius: 9999px; font-weight: 700; font-size: 0.75rem; text-transform: uppercase; }
-
-.match-sets-sum { font-size: 0.9rem; margin-top: -1.5rem; margin-bottom: 2rem; color: #64748b; font-style: italic; text-align: right; }
-.summary-footer { background: #f8fafc; padding: 2rem; text-align: center; font-weight: 800; font-size: 1.4rem; color: #0f172a; border-radius: 16px; margin-top: 3rem; border: 2px dashed #e2e8f0; }
-
-#league-ranking-container { margin: 3rem 0; }
-.compo-total-row { background: #f1f5f9 !important; font-weight: 700; font-size: 0.85rem; color: #475569; text-align: center; text-transform: uppercase; }
-        `.trim();
+            return { teamA, teamB, matches: processedMatches, stats, clubRatings, totals: { setsA, setsB, pointsA: ptsA, pointsB: ptsB } };
         }
 
-        document.getElementById('btn-copy-css').onclick = () => {
-            navigator.clipboard.writeText(getWordPressCSS()).then(() => {
-                showToast('CSS WordPress copié !');
-            });
-        };
+        function calculateGain(rA, rB, won) {
+            if (!rA || !rB) return 0;
+            const d = rA - rB;
+            if (won) {
+                if (d >= 500) return 0.5; if (d >= 200) return 3; if (d >= 0) return 5;
+                if (d >= -100) return 8; if (d >= -300) return 22; return 40;
+            } else {
+                if (d >= 400) return -40; if (d >= 200) return -17; if (d >= 0) return -6;
+                return -2;
+            }
+        }
+
+        /**
+         * GÉNÉRATEURS HTML D'EXPORT
+         */
+        function generateScoreboardHTML(d) {
+            const outA = d.scorea > d.scoreb ? 3 : (d.scorea < d.scoreb ? 1 : 2);
+            const outB = d.scoreb > d.scorea ? 3 : (d.scoreb < d.scorea ? 1 : 2);
+            return `
+            <div class="premium-scoreboard">
+                <div class="score-digit-box digit-red">${outA}</div>
+                <div class="score-digit-box digit-black">${d.scorea}</div>
+                <div class="score-divider"></div>
+                <div class="score-digit-box digit-black">${d.scoreb}</div>
+                <div class="score-digit-box digit-red">${outB}</div>
+            </div>`;
+        }
+
+        function generateCompositionTable(eqA, eqB, tA, tB) {
+            const rows = [];
+            for (let i = 0; i < Math.max(tA.length, tB.length); i++) {
+                rows.push(`<tr><td>${tA[i]?.nom || ''} (${tA[i]?.pts || ''})</td><td>${tB[i]?.nom || ''} (${tB[i]?.pts || ''})</td></tr>`);
+            }
+            return `<div class="section-title">Compositions</div><table class="premium-table"><thead><tr><th>${eqA}</th><th>${eqB}</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+        }
+
+        function generatePartiesTable(eqA, eqB, matches, isHome) {
+            const rows = matches.map(m => `
+                <tr>
+                    <td style="${m.swA > m.swB ? 'font-weight:700' : ''}">${m.ja}</td>
+                    <td style="${m.swB > m.swA ? 'font-weight:700' : ''}">${m.jb}</td>
+                    ${m.sets.map(v => `<td class="col-set">${v || ''}</td>`).join('')}
+                    <td class="col-score"><span class="${(isHome ? m.swA > m.swB : m.swB > m.swA) ? 'badge-win' : 'badge-loss'}">${m.swA}-${m.swB}</span></td>
+                </tr>`).join('');
+            return `<div class="section-title">Détails des parties</div><table class="premium-table"><thead><tr><th>${eqA}</th><th>${eqB}</th><th colspan="5">Manches</th><th>Score</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+        }
+
+        function generateIndividualStats(stats, ratings) {
+            const rows = Object.keys(stats).map(name => {
+                const s = stats[name];
+                return `<tr><td>${name}</td><td>${s.v}</td><td>${s.d}</td><td style="color:${s.pts>=0?'#10b981':'#ef4444'}">${s.pts>=0?'+':''}${s.pts.toFixed(1)}</td></tr>`;
+            }).join('');
+            return `<div class="section-title">Bilan Individuel</div><table class="premium-table"><thead><tr><th>Joueur</th><th>V</th><th>D</th><th>+/-</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+        }
+
+        /**
+         * CLIPBOARD
+         */
+        function copyToClipboardText() {
+            if (state.results.length === 0) return showToast('Générez les résultats.', true);
+            const text = state.results.map(r => `${r.scoreA > r.scoreB ? '✅' : '❌'} ${r.teamName} [${res.scoreA}-${res.scoreB}] ${r.opponent}`).join('\n');
+            navigator.clipboard.writeText(text).then(() => showToast('Texte copié !'));
+        }
+
+        function copyToClipboardCSS() {
+            navigator.clipboard.writeText(getWordPressCSS()).then(() => showToast('CSS copié !'));
+        }
 
         function copyHTMLForWordPress() {
-            const panel = document.getElementById('export-panel');
-            if (!panel || !panel.innerHTML) return;
-
-            // Clone to modify
-            const clone = panel.cloneNode(true);
-            // Remove buttons
-            const btnBox = clone.querySelector('div');
-            if (btnBox) btnBox.remove();
-
-            const fullHTML = `
-            <div class="ttcav-export-wrapper" style="background: white; padding: 30px; border-radius: 15px; border: 1px solid #eee; max-width: 800px; margin: 2rem auto; box-shadow: 0 10px 25px rgba(0,0,0,0.05); box-sizing: border-box;">
-                ${clone.innerHTML}
-            </div>
-        `;
-
-            navigator.clipboard.writeText(fullHTML.trim()).then(() => {
-                showToast('HTML (WP) sans CSS copié !');
-            });
+            const html = document.getElementById('export-panel').cloneNode(true);
+            html.querySelector('.export-actions')?.remove();
+            const wrapper = `<div class="ttcav-export-wrapper" style="background:#fff;padding:30px;max-width:800px;margin:auto;">${html.innerHTML}</div>`;
+            navigator.clipboard.writeText(wrapper).then(() => showToast('HTML copié !'));
         }
 
-        // Auto-init if credentials exist
-        if (state.appId && state.clubId) {
-            loadTeams();
+        function getWordPressCSS() {
+            return `@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&display=swap');
+.ttcav-export-wrapper { font-family:'Outfit',sans-serif; color:#1e293b; }
+.export-header { text-align:center; margin-bottom:2rem; }
+.premium-scoreboard { display:flex; justify-content:center; gap:10px; background:#0f172a; padding:20px; border-radius:12px; color:#fff; }
+.score-digit-box { background:#fff; color:#000; width:40px; height:50px; display:flex; align-items:center; justify-content:center; font-size:1.8rem; font-weight:800; border-radius:6px; }
+.premium-table { width:100%; border-collapse:collapse; margin-bottom:2rem; }
+.premium-table th { background:#f8fafc; padding:12px; text-align:left; border-bottom:1px solid #e2e8f0; }
+.premium-table td { padding:10px; border-bottom:1px solid #f1f5f9; }
+.badge-win { background:#dcfce7; color:#166534; padding:4px 10px; border-radius:99px; font-weight:700; }
+.badge-loss { background:#fee2e2; color:#991b1b; padding:4px 10px; border-radius:99px; font-weight:700; }`;
         }
+
+        // Démarrage
+        initializeApp();
     </script>
-
 </body>
-
 </html>
