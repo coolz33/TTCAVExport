@@ -1,0 +1,177 @@
+SimpleXMLElement Object
+(
+    [resultat] => SimpleXMLElement Object
+        (
+            [equa] => LE CHAMBON Rev. 1
+            [equb] => VILLEFRANCHE/SAONE  TTCAV 1
+            [resa] => 5
+            [resb] => 9
+        )
+
+    [joueur] => Array
+        (
+            [0] => SimpleXMLElement Object
+                (
+                    [xja] => LEVEQUE Geoffrey
+                    [xca] => M 2019pts
+                    [xjb] => FERRY Thomas
+                    [xcb] => M 2011pts
+                )
+
+            [1] => SimpleXMLElement Object
+                (
+                    [xja] => PEYRET Benjamin
+                    [xca] => M 1815pts
+                    [xjb] => GILLE Ethan
+                    [xcb] => M 1844pts
+                )
+
+            [2] => SimpleXMLElement Object
+                (
+                    [xja] => RIVOLLIER Quentin
+                    [xca] => M 1862pts
+                    [xjb] => GARNIER Anthony
+                    [xcb] => N°872- M 2075pts
+                )
+
+            [3] => SimpleXMLElement Object
+                (
+                    [xja] => MURGUES Adrien
+                    [xca] => M 1736pts
+                    [xjb] => DAMOUR Clement
+                    [xcb] => M 1720pts
+                )
+
+        )
+
+    [partie] => Array
+        (
+            [0] => SimpleXMLElement Object
+                (
+                    [ja] => LEVEQUE Geoffrey
+                    [scorea] => 1
+                    [jb] => FERRY Thomas
+                    [scoreb] => -
+                    [detail] => 11 -08 12 06
+                )
+
+            [1] => SimpleXMLElement Object
+                (
+                    [ja] => PEYRET Benjamin
+                    [scorea] => -
+                    [jb] => GILLE Ethan
+                    [scoreb] => 1
+                    [detail] => 06 -10 -07 08 -02
+                )
+
+            [2] => SimpleXMLElement Object
+                (
+                    [ja] => RIVOLLIER Quentin
+                    [scorea] => -
+                    [jb] => GARNIER Anthony
+                    [scoreb] => 1
+                    [detail] => 06 -06 -04 -08
+                )
+
+            [3] => SimpleXMLElement Object
+                (
+                    [ja] => MURGUES Adrien
+                    [scorea] => 1
+                    [jb] => DAMOUR Clement
+                    [scoreb] => -
+                    [detail] => 11 01 03
+                )
+
+            [4] => SimpleXMLElement Object
+                (
+                    [ja] => LEVEQUE Geoffrey
+                    [scorea] => -
+                    [jb] => GILLE Ethan
+                    [scoreb] => 1
+                    [detail] => -08 09 -09 -09
+                )
+
+            [5] => SimpleXMLElement Object
+                (
+                    [ja] => PEYRET Benjamin
+                    [scorea] => -
+                    [jb] => FERRY Thomas
+                    [scoreb] => 1
+                    [detail] => 05 -04 -08 08 -04
+                )
+
+            [6] => SimpleXMLElement Object
+                (
+                    [ja] => MURGUES Adrien
+                    [scorea] => -
+                    [jb] => GARNIER Anthony
+                    [scoreb] => 1
+                    [detail] => 06 -09 09 -05 -08
+                )
+
+            [7] => SimpleXMLElement Object
+                (
+                    [ja] => RIVOLLIER Quentin
+                    [scorea] => 1
+                    [jb] => DAMOUR Clement
+                    [scoreb] => -
+                    [detail] => 03 10 08
+                )
+
+            [8] => SimpleXMLElement Object
+                (
+                    [ja] => MURGUES Adrien et RIVOLLIER Quentin
+                    [scorea] => -
+                    [jb] => DAMOUR Clement et FERRY Thomas
+                    [scoreb] => 1
+                    [detail] => 12 -09 -07 05 -04
+                )
+
+            [9] => SimpleXMLElement Object
+                (
+                    [ja] => LEVEQUE Geoffrey et PEYRET Benjamin
+                    [scorea] => -
+                    [jb] => GILLE Ethan et GARNIER Anthony
+                    [scoreb] => 1
+                    [detail] => -07 -08 -08
+                )
+
+            [10] => SimpleXMLElement Object
+                (
+                    [ja] => LEVEQUE Geoffrey
+                    [scorea] => 1
+                    [jb] => GARNIER Anthony
+                    [scoreb] => -
+                    [detail] => -11 11 07 -04 05
+                )
+
+            [11] => SimpleXMLElement Object
+                (
+                    [ja] => RIVOLLIER Quentin
+                    [scorea] => -
+                    [jb] => FERRY Thomas
+                    [scoreb] => 1
+                    [detail] => -07 -09 05 09 -04
+                )
+
+            [12] => SimpleXMLElement Object
+                (
+                    [ja] => MURGUES Adrien
+                    [scorea] => -
+                    [jb] => GILLE Ethan
+                    [scoreb] => 1
+                    [detail] => -10 -04 -09
+                )
+
+            [13] => SimpleXMLElement Object
+                (
+                    [ja] => PEYRET Benjamin
+                    [scorea] => 1
+                    [jb] => DAMOUR Clement
+                    [scoreb] => -
+                    [detail] => 08 07 08
+                )
+
+        )
+
+)

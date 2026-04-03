@@ -1,0 +1,10 @@
+/node_modules
+/.idea
+/.vscode
+/php-S*
+/api_test*
+/logs*
+/*.xml
+/player_cache.json
+/.DS_Store
+.env

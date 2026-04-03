@@ -1,0 +1,1 @@
+<joueur><xja>LEVEQUE Geoffrey</xja><xca>M 2019pts</xca><xjb>FERRY Thomas</xjb><xcb>M 2011pts</xcb></joueur>
