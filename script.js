@@ -158,8 +158,7 @@ async function loadTeams() {
     if (!state.clubId) return showToast('Veuillez configurer votre numéro de club.', true);
 
     elements.loader.style.display = 'block';
-    logDebug('Initialisation du serial...');
-    await fetchData('getInitialisation');
+    logDebug('Requête des équipes (sans intialisation pour aller plus vite)...');
 
     logDebug(`Chargement des équipes pour le club ${state.clubId}...`);
     const data = await fetchData('getTeams');
@@ -579,9 +578,9 @@ function renderPremiumExport(res, details) {
     }
 
     compoHTML += `
-        <tr style="background: #f1f5f9; font-weight: 700; font-size: 0.85rem; color: #475569; text-align: center; text-transform: uppercase;">
-            <td style="padding: 0.5rem 1rem;">TOTAL : ${equipeAPoints} pts</td>
-            <td style="padding: 0.5rem 1rem;">TOTAL : ${equipeBPoints} pts</td>
+        <tr class="compo-total-row" style="background: #f1f5f9; font-weight: 700; font-size: 0.85rem; color: #475569; text-align: center; text-transform: uppercase;">
+            <td style="padding: 0.5rem 1rem;">TOTAL POINTS EQUIPE : ${equipeAPoints}</td>
+            <td style="padding: 0.5rem 1rem;">TOTAL POINTS EQUIPE : ${equipeBPoints}</td>
         </tr>
     </tbody></table>`;
 
@@ -630,6 +629,11 @@ function renderPremiumExport(res, details) {
 
         let setsWA = 0, setsWB = 0;
         let hasValidSets = false;
+
+        // NEW SCORING LOGIC ACCUMULATION
+        let pointsSummaryA = 0;
+        let pointsSummaryB = 0;
+
         sets.forEach(setStr => {
             if (!setStr) return;
             if (setStr.includes('-') && setStr.indexOf('-') > 0) {
@@ -640,9 +644,23 @@ function renderPremiumExport(res, details) {
                 }
             } else {
                 const val = parseInt(setStr);
-                if (!isNaN(val)) { if (val < 0) setsWB++; else setsWA++; hasValidSets = true; }
+                if (isNaN(val)) return;
+
+                if (val > 0) { // Team A wins set (input is Team B's points, e.g. 8 for 11-8)
+                    pointsSummaryA += (val < 10) ? 11 : (val + 2);
+                    pointsSummaryB += val;
+                } else if (val < 0) { // Team B wins set (input is -8 for 8-11)
+                    const absVal = Math.abs(val);
+                    pointsSummaryA += absVal;
+                    pointsSummaryB += (absVal < 10) ? 11 : (absVal + 2);
+                }
+
+                if (val < 0) setsWB++; else setsWA++; hasValidSets = true; 
             }
         });
+
+        totalPointsA += pointsSummaryA;
+        totalPointsB += pointsSummaryB;
 
         let strA = getVal(m.scorea);
         let strB = getVal(m.scoreb);
@@ -664,8 +682,6 @@ function renderPremiumExport(res, details) {
             if (playerA && playerB && playerA.rawPoints && playerB.rawPoints) {
                 let gainA = getPointsGained(playerA.rawPoints, playerB.rawPoints, finalSA > finalSB);
                 let gainB = getPointsGained(playerB.rawPoints, playerA.rawPoints, finalSB > finalSA);
-                totalPointsA += gainA;
-                totalPointsB += gainB;
                 if (res.isHome) { rowPoints = gainA; if (clubStats[jA]) clubStats[jA].ptsMatch += rowPoints; }
                 else { rowPoints = gainB; if (clubStats[jB]) clubStats[jB].ptsMatch += rowPoints; }
             }
@@ -795,6 +811,7 @@ function renderPremiumExport(res, details) {
     const scoreboardHTML = `
         <div class="premium-scoreboard" style="align-items: center;">
             <div class="score-digit-box digit-red" style="width: 40px; height: 56px; font-size: 2rem;">${outcomeA}</div>
+            <div class="score-divider"></div>
             <div class="score-digit-box digit-black" style="width: auto; min-width: 70px; padding: 0 10px;">${finalTeamScoreA}</div>
             <div class="score-divider"></div>
             <div class="score-digit-box digit-black" style="width: auto; min-width: 70px; padding: 0 10px;">${finalTeamScoreB}</div>
@@ -804,19 +821,21 @@ function renderPremiumExport(res, details) {
 
     // ===== ASSEMBLAGE FINAL =====
     panel.innerHTML = `
-        <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-bottom: 1.5rem;">
-            <button onclick="copyHTMLForWordPress()" style="padding: 0.6rem 1.25rem; border-radius: 8px; background: #e63946; color: white; border: none; cursor: pointer; font-weight: bold; box-shadow: none; font-size: 0.9rem;">📄 Copier HTML (WP)</button>
+        <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-bottom: 1.5rem;">
+            <button onclick="copyHTMLForWordPress()" style="padding: 0.6rem 1.25rem; border-radius: 8px; background: #eab308; color: white; border: none; cursor: pointer; font-weight: bold; box-shadow: none; font-size: 0.9rem;">📄 Copier HTML (WP)</button>
             <button onclick="document.getElementById('export-container').style.display='none'" style="padding: 0.6rem 1.25rem; border-radius: 8px; background: #e2e8f0; color: #475569; border: none; cursor: pointer; font-weight: bold; box-shadow: none; font-size: 0.9rem;">✕ Fermer</button>
         </div>
         <div class="export-header">
             <div class="export-title">${equipeA} –<br>${equipeB}</div>
             <div class="export-subtitle">${res.category}</div>
+            <p>&nbsp;</p>
+            <div class="wp-block-image" style="text-align:center; margin-bottom: 2rem;"><img src="URL_DE_VOTRE_IMAGE" alt="Photo d'équipe" style="max-width:100%; border-radius:8px;"></div>
             ${scoreboardHTML}
         </div>
         ${compoHTML}
         ${partiesHTML}
-        <div style="font-size: 0.9rem; margin-top: -1.5rem; margin-bottom: 2rem; color: #64748b; font-style: italic; text-align: right;">
-            <span style="margin-right: 1.5rem;">Les points : ${totalPointsA.toFixed(1)} / ${totalPointsB.toFixed(1)}</span>
+        <div class="match-sets-sum">
+            <span style="margin-right: 1.5rem;">Les points : ${totalPointsA} / ${totalPointsB}</span>
             Les manches : ${totalSetsA} - ${totalSetsB}
         </div>
         ${statsHTML}
@@ -878,6 +897,7 @@ function getWordPressCSS() {
 .export-header { text-align:center; margin-bottom:2rem; }
 .premium-scoreboard { display:flex; justify-content:center; gap:10px; background:#0f172a; padding:20px; border-radius:12px; color:#fff; }
 .score-digit-box { background:#fff; color:#000; width:40px; height:50px; display:flex; align-items:center; justify-content:center; font-size:1.8rem; font-weight:800; border-radius:6px; }
+.digit-red { color: #e11d48; }
 .premium-table { width:100%; border-collapse:collapse; margin-bottom:2rem; }
 .premium-table th { background:#f1f5f9; padding:0.75rem; border:1px solid #e2e8f0; }
 .premium-table td { padding:0.75rem; border:1px solid #e2e8f0; }
