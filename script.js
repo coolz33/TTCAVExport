@@ -8,9 +8,12 @@ const state = {
     appKey: localStorage.getItem('fftt_appKey') || '',
     serial: localStorage.getItem('fftt_serial') || '',
     clubId: localStorage.getItem('fftt_clubId') || '',
+    groqKey: localStorage.getItem('groq_key') || '',
+    groqModel: localStorage.getItem('groq_model') || 'llama-3.3-70b-versatile',
     teams: [],
     matchdays: [],
-    results: []
+    results: [],
+    currentMatchData: null // Stockage temporaire pour l'IA
 };
 
 // ===== UI ELEMENTS =====
@@ -30,10 +33,16 @@ const elements = {
 };
 
 // ===== INIT INPUTS =====
-document.getElementById('input-app-id').value = state.appId;
-document.getElementById('input-app-key').value = state.appKey;
-document.getElementById('input-serial').value = state.serial;
-document.getElementById('input-club-id').value = state.clubId;
+const safeSetVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+};
+safeSetVal('input-app-id', state.appId);
+safeSetVal('input-app-key', state.appKey);
+safeSetVal('input-serial', state.serial);
+safeSetVal('input-club-id', state.clubId);
+safeSetVal('input-groq-key', state.groqKey);
+safeSetVal('select-groq-model', state.groqModel);
 
 // Debug checkbox
 const debugCheckbox = document.getElementById('input-show-debug');
@@ -87,11 +96,15 @@ document.getElementById('save-settings').onclick = () => {
     state.appKey = document.getElementById('input-app-key').value;
     state.serial = document.getElementById('input-serial').value;
     state.clubId = document.getElementById('input-club-id').value;
+    state.groqKey = document.getElementById('input-groq-key').value;
+    state.groqModel = document.getElementById('select-groq-model').value;
 
     localStorage.setItem('fftt_appId', state.appId);
     localStorage.setItem('fftt_appKey', state.appKey);
     localStorage.setItem('fftt_serial', state.serial);
     localStorage.setItem('fftt_clubId', state.clubId);
+    localStorage.setItem('groq_key', state.groqKey);
+    localStorage.setItem('groq_model', state.groqModel);
 
     if (debugCheckbox) {
         localStorage.setItem('fftt_showDebug', debugCheckbox.checked);
@@ -809,17 +822,28 @@ function renderPremiumExport(res, details) {
     else if (finalTeamScoreA < finalTeamScoreB) { outcomeA = 1; outcomeB = 3; }
 
     const scoreboardHTML = `
-        <div class="premium-scoreboard" style="align-items: center;">
-            <div class="score-digit-box digit-red" style="width: 40px; height: 56px; font-size: 2rem;">${outcomeA}</div>
+        <div class="premium-scoreboard">
+            <div class="score-digit-box digit-red" style="width: 35px; height: 50px; font-size: 1.8rem;">${outcomeA}</div>
             <div class="score-divider"></div>
-            <div class="score-digit-box digit-black" style="width: auto; min-width: 70px; padding: 0 10px;">${finalTeamScoreA}</div>
+            <div class="score-digit-box digit-black" style="width: 65px; height: 75px; font-size: 2.8rem;">${finalTeamScoreA}</div>
             <div class="score-divider"></div>
-            <div class="score-digit-box digit-black" style="width: auto; min-width: 70px; padding: 0 10px;">${finalTeamScoreB}</div>
-            <div class="score-digit-box digit-red" style="width: 40px; height: 56px; font-size: 2rem;">${outcomeB}</div>
+            <div class="score-digit-box digit-black" style="width: 65px; height: 75px; font-size: 2.8rem;">${finalTeamScoreB}</div>
+            <div class="score-divider"></div>
+            <div class="score-digit-box digit-red" style="width: 35px; height: 50px; font-size: 1.8rem;">${outcomeB}</div>
         </div>
     `;
 
     // ===== ASSEMBLAGE FINAL =====
+    // Stockage pour l'IA (évite les erreurs de sérialisation dans l'attribut onclick)
+    state.currentMatchData = {
+        teamA: equipeA,
+        teamB: equipeB,
+        scoreA: finalTeamScoreA,
+        scoreB: finalTeamScoreB,
+        category: res.category,
+        stats: stats
+    };
+
     panel.innerHTML = `
         <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-bottom: 1.5rem;">
             <button onclick="copyHTMLForWordPress()" style="padding: 0.6rem 1.25rem; border-radius: 8px; background: #eab308; color: white; border: none; cursor: pointer; font-weight: bold; box-shadow: none; font-size: 0.9rem;">📄 Copier HTML (WP)</button>
@@ -828,9 +852,16 @@ function renderPremiumExport(res, details) {
         <div class="export-header">
             <div class="export-title">${equipeA} –<br>${equipeB}</div>
             <div class="export-subtitle">${res.category}</div>
-            <p>&nbsp;</p>
-            <div class="wp-block-image" style="text-align:center; margin-bottom: 2rem;"><img src="URL_DE_VOTRE_IMAGE" alt="Photo d'équipe" style="max-width:100%; border-radius:8px;"></div>
             ${scoreboardHTML}
+            <div style="margin: 2rem auto; max-width: 85% ; display: flex; align-items: center; justify-content: center; gap: 15px; background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                <p id="ai-summary-display" style="font-style: italic; color: #475569; margin: 0; line-height: 1.6; text-align: left; flex: 1; font-size: 0.95rem;">
+                    <em>Cliquez sur l'éclair en haut pour générer le premier résumé...</em>
+                </p>
+                <button id="btn-ai-refresh" onclick="generateAISummaryClickHandler()" style="background: #8b5cf6; color: white; border: none; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);" title="Regénérer le résumé IA">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="wp-block-image" style="text-align:center; margin-bottom: 2rem;"><img src="URL_DE_VOTRE_IMAGE" alt="Photo d'équipe" style="max-width:100%; border-radius:8px;"></div>
         </div>
         ${compoHTML}
         ${partiesHTML}
@@ -881,28 +912,250 @@ function renderPremiumExport(res, details) {
     const exportContainer = elements.exportContainer;
     exportContainer.style.cssText = "display: block; position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: 5000; background: rgba(0,0,0,0.8); overflow-y: auto; padding: 40px 20px;";
     panel.style.cssText = "display: block; margin: 0 auto; background: white; max-width: 1000px; padding: 40px; border-radius: 12px; position: relative;";
+    
+    // Déclenchement automatique de l'IA si configurée
+    if (state.groqKey) {
+        generateAISummaryClickHandler();
+    }
+}
+
+// ===== IA SUMMARY (GROQ) =====
+async function generateAISummaryClickHandler() {
+    const matchData = state.currentMatchData;
+    if (!matchData) return;
+    if (!state.groqKey) return;
+    
+    const btn = document.getElementById('btn-ai-refresh');
+    const display = document.getElementById('ai-summary-display');
+    const originalContent = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
+    display.innerHTML = '<em>L\'IA analyse les résultats...</em>';
+
+    try {
+        const statsStr = Object.entries(matchData.stats).map(([name, s]) => `${name}: ${s.v}V/${s.d}D`).join(', ');
+        const prompt = `Tu es un journaliste sportif spécialisé dans le tennis de table du club TTCAV (les "Jaunes"). 
+        Rédige un court paragraphe percutant (environ 3-4 phrases) pour résumer cette rencontre de championnat.
+        
+        Détails :
+        - Équipe : ${matchData.teamA} vs ${matchData.teamB}
+        - Score Final : ${matchData.scoreA} - ${matchData.scoreB}
+        - Division : ${matchData.category}
+        - Stats des joueurs de notre club : ${statsStr}
+        
+        Instructions :
+        - Sois enthousiaste si on a gagné, encourageant sinon.
+        - Mets en avant les joueurs ayant fait un sans-faute (ex: 3V/0D).
+        - IMPORTANT : N'utilise QUE les PRÉNOMS des joueurs de notre club (ex: "Ethan" au lieu de "Ethan GILLE" ou "GILLE Ethan").
+        - Utilise un ton de club local (ex: Jaunes, TTCAV). NE mentionne PAS que tu es une IA.
+        - Réponds directement par le paragraphe, sans introduction ni guillemets.`;
+
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${state.groqKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: state.groqModel,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.8, // Légère augmentation pour plus de variété
+                max_tokens: 300
+            })
+        });
+
+        const result = await response.json();
+        if (result.choices && result.choices[0]) {
+            display.textContent = result.choices[0].message.content.trim();
+            // On peut mettre à jour le bouton principal aussi
+            const mainBtn = document.getElementById('btn-ai-summary');
+            if (mainBtn) mainBtn.innerHTML = '🔄 Régénérer';
+            showToast('Résumé IA généré !');
+        } else {
+            throw new Error('Réponse vide de Groq');
+        }
+    } catch (e) {
+        logDebug(`Erreur Groq: ${e.message}`, 'error');
+        showToast('Erreur lors de la génération IA.', true);
+        display.textContent = "";
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+    }
 }
 
 // ===== CLIPBOARD =====
 function copyHTMLForWordPress() {
-    const html = elements.exportPanel.cloneNode(true);
-    html.querySelector('.export-actions')?.remove();
-    const wrapper = `<div class="ttcav-export-wrapper" style="background:#fff;padding:30px;max-width:800px;margin:auto;">${html.innerHTML}</div>`;
-    navigator.clipboard.writeText(wrapper).then(() => showToast('HTML copié !'));
+    const title = document.querySelector('#export-panel .export-title')?.innerText.replace(/\n/g, ' ') || '';
+    const subtitle = document.querySelector('#export-panel .export-subtitle')?.innerText || '';
+    const scoreboard = document.querySelector('#export-panel .premium-scoreboard')?.outerHTML || '';
+    const aiSummaryEl = document.getElementById('ai-summary-display');
+    let aiSummary = (aiSummaryEl && !aiSummaryEl.innerHTML.includes('<em>')) ? aiSummaryEl.innerText : '';
+    
+    // Clonage pour extraire la partie tableaux (sans titres ni actions ni scoreboard)
+    const container = elements.exportPanel.cloneNode(true);
+    container.querySelector('.export-actions')?.remove();
+    container.querySelector('.export-header')?.remove();
+    
+    const wpContent = `<!-- wp:heading {"textAlign":"center"} -->
+<h2 class="wp-block-heading has-text-align-center">${title}</h2>
+<!-- /wp:heading -->
+
+<!-- wp:heading {"level":4,"textAlign":"center"} -->
+<h4 class="wp-block-heading has-text-align-center">${subtitle}</h4>
+<!-- /wp:heading -->
+
+<!-- wp:html -->
+<div class="ttcav-export-wrapper">
+    ${scoreboard}
+</div>
+<!-- /wp:html -->
+
+${aiSummary ? `<!-- wp:paragraph {"textAlign":"center"} -->
+<p class="has-text-align-center"><em>${aiSummary}</em></p>
+<!-- /wp:paragraph -->` : ''}
+
+<!-- wp:image -->
+<figure class="wp-block-image size-full"><img src="URL_DE_VOTRE_IMAGE" alt="Photo équipe"/></figure>
+<!-- /wp:image -->
+
+<!-- wp:gallery {"linkTo":"none"} -->
+<figure class="wp-block-gallery has-nested-images columns-default is-cropped"></figure>
+<!-- /wp:gallery -->
+
+<!-- wp:html -->
+<div class="ttcav-export-wrapper">
+    ${container.innerHTML}
+</div>
+<!-- /wp:html -->`;
+
+    navigator.clipboard.writeText(wpContent.trim()).then(() => showToast('HTML WordPress (Blocs Gutenberg) copié !'));
 }
 
 function getWordPressCSS() {
     return `@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&display=swap');
-.ttcav-export-wrapper { font-family:'Outfit',sans-serif; color:#1e293b; }
-.export-header { text-align:center; margin-bottom:2rem; }
-.premium-scoreboard { display:flex; justify-content:center; gap:10px; background:#0f172a; padding:20px; border-radius:12px; color:#fff; }
-.score-digit-box { background:#fff; color:#000; width:40px; height:50px; display:flex; align-items:center; justify-content:center; font-size:1.8rem; font-weight:800; border-radius:6px; }
+
+.ttcav-export-wrapper { 
+    font-family: 'Outfit', -apple-system, sans-serif; 
+    color: #334155; 
+    line-height: 1.5;
+}
+
+.export-header { text-align: center; margin-bottom: 2rem; }
+
+.export-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #1e293b;
+    letter-spacing: 1px;
+    margin-bottom: 0.5rem;
+}
+
+.export-subtitle {
+    font-size: 1.4rem;
+    color: #475569;
+    margin-bottom: 2rem;
+}
+
+.premium-scoreboard {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    background: #000;
+    padding: 12px 15px;
+    border-radius: 6px;
+    width: fit-content;
+    margin: 2rem auto;
+}
+
+.score-digit-box {
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-family: 'Arial Black', sans-serif;
+    border-radius: 2px;
+}
+
 .digit-red { color: #e11d48; }
-.premium-table { width:100%; border-collapse:collapse; margin-bottom:2rem; }
-.premium-table th { background:#f1f5f9; padding:0.75rem; border:1px solid #e2e8f0; }
-.premium-table td { padding:0.75rem; border:1px solid #e2e8f0; }
-.badge-win { background:#dcfce7; color:#166534; padding:2px 8px; border-radius:4px; }
-.badge-loss { background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:4px; }`;
+.digit-black { color: #000; }
+.score-divider { width: 4px; }
+
+.section-title {
+    text-align: center;
+    font-size: 1.2rem;
+    margin: 3rem 0 1rem;
+    color: #64748b;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 10px;
+}
+
+.premium-table {
+    width: 100% !important;
+    border-collapse: collapse;
+    margin-bottom: 2rem;
+    border: 1px solid #e2e8f0;
+}
+
+.premium-table th {
+    background: #f1f5f9;
+    color: #475569;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    padding: 1rem;
+    border: 1px solid #e2e8f0;
+}
+
+.premium-table td {
+    padding: 0.75rem 1rem;
+    border: 1px solid #e2e8f0;
+    font-size: 0.95rem;
+}
+
+.premium-table tr:nth-child(even) { background: #f8fafc; }
+
+.col-player { width: 35%; }
+.col-set { width: 7%; text-align: center; color: #64748b; font-size: 0.85rem; }
+.col-score { width: 10%; text-align: center; font-weight: 700; }
+
+.badge-win {
+    background: #dcfce7;
+    color: #166534;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+.badge-loss {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+.summary-footer {
+    text-align: center;
+    margin-top: 3rem;
+    font-weight: 800;
+    font-size: 1.4rem;
+    color: #0f172a;
+    padding: 2rem;
+    border: 2px dashed #e2e8f0;
+    border-radius: 12px;
+}
+
+.compo-total-row {
+    background: #f1f5f9 !important;
+    font-weight: 700;
+    color: #475569;
+    text-align: center;
+}`;
 }
 
 // ===== AUTO-INIT =====

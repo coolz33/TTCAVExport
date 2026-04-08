@@ -126,6 +126,22 @@
                 <label>Serial (Requis pour SWXXX)</label>
                 <input type="text" id="input-serial" placeholder="N° de série">
             </div>
+            <hr style="border:0; border-top:1px solid var(--glass-border); margin: 1.5rem 0;">
+            <h3 style="margin-bottom:0.5rem">Intelligence Artificielle (Groq)</h3>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">Utilisée pour générer des résumés de matchs percutants.</p>
+            <div class="form-group">
+                <label>Clé API Groq</label>
+                <input type="password" id="input-groq-key" placeholder="gsk_...">
+            </div>
+            <div class="form-group">
+                <label>Modèle IA</label>
+                <select id="select-groq-model" class="fancy-select" style="min-width: 100%; border-radius: 8px;">
+                    <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Recommandé)</option>
+                    <option value="llama-3.1-8b-instant">Llama 3.1 8B (Très Rapide)</option>
+                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                </select>
+            </div>
+            <hr style="border:0; border-top:1px solid var(--glass-border); margin: 1.5rem 0;">
             <div class="form-group">
                 <label>Numéro de Club (ex: 09690049)</label>
                 <input type="text" id="input-club-id" placeholder="09690049">
