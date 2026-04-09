@@ -229,21 +229,14 @@ function getVal(v) {
 
 function cleanTeamName(name) {
     if (!name) return "";
-    let n = getVal(name).toUpperCase();
-
-    // Détection spécifique du club TTCAV (Villefranche)
-    if (n.includes("VILLEFR") || n.includes("VILLFR") || n.includes("TTCAV")) {
-        const numMatch = n.match(/\d+/);
-        const num = numMatch ? numMatch[0] : "";
-        // On remplace le nom complet par TTCAV + numéro + Villefranche, sans la Phase
-        return `TTCAV ${num} (Villefranche)`.trim();
-    }
-
-    // Pour les autres clubs : Retrait de "Phase X" et Titrisation
+    let n = getVal(name);
+    // Retrait de "Phase X"
     n = n.replace(/PHASE\s*\d+/gi, '').trim();
-    return n.toLowerCase().split(' ').map(s => {
+    // Titrisation
+    return n.split(' ').map(s => {
         if (/^\d+$/.test(s)) return s;
-        return s.charAt(0).toUpperCase() + s.substring(1);
+        if (!s) return "";
+        return s.charAt(0).toUpperCase() + s.substring(1).toLowerCase();
     }).join(' ');
 }
 
@@ -389,7 +382,7 @@ async function loadTeams(forceRefresh = false) {
                     const tRaw = t.libequipe || t.libequ || t.libepr || t.lib || `Équipe ${idx + 1}`;
                     const tName = cleanTeamName(tRaw);
 
-                    if (!tName.includes('TTCAV') || seen.has(tName)) return;
+                    if (seen.has(tName)) return;
                     seen.add(tName);
 
                     const opt = document.createElement('option');
@@ -625,8 +618,12 @@ async function generateResults() {
 
                     if (sA === '' && sB === '') return;
 
-                    const isHome = getVal(matchFound.equa).toLowerCase().includes(teamName.toLowerCase()) ||
-                        teamName.toLowerCase().includes(getVal(matchFound.equa).toLowerCase());
+                    const norm = s => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").replace(/phase\d/g, "");
+                    const nA = norm(getVal(matchFound.equa));
+                    const nB = norm(getVal(matchFound.equb));
+                    const nTarget = norm(teamName);
+
+                    const isHome = nA.includes(nTarget) || nTarget.includes(nA);
 
                     state.results.push({
                         teamName: cleanTeamName(teamName),
@@ -992,21 +989,40 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 });
             }
 
-            const styleA = finalSA > finalSB ? 'font-weight: bold; color: #0f172a;' : '';
-            const styleB = finalSB > finalSA ? 'font-weight: bold; color: #0f172a;' : '';
+            const styleA = finalSA > finalSB ? 'font-weight: bold !important; color: #011 !important;' : 'font-weight: normal !important;';
+            const styleB = finalSB > finalSA ? 'font-weight: bold !important; color: #011 !important;' : 'font-weight: normal !important;';
 
             const diff = rowPoints;
             const ptsClass = diff > 0 ? 'pts-pos' : (diff < 0 ? 'pts-neg' : 'pts-neu');
+
+            const formattedSets = sets.map(s => {
+                if (!s || s === '-') return '-';
+                let val = parseInt(s);
+                if (isNaN(val)) {
+                    if (s.includes('-')) {
+                        const parts = s.split('-');
+                        if (parts.length === 2) {
+                            const p1 = parseInt(parts[0]), p2 = parseInt(parts[1]);
+                            const aWinsVal = p1 > p2;
+                            return (res.isHome ? aWinsVal : !aWinsVal) ? `<strong>${s}</strong>` : s;
+                        }
+                    }
+                    return s;
+                }
+                const aWinsVal = val > 0;
+                const clubWins = res.isHome ? aWinsVal : !aWinsVal;
+                return clubWins ? `<strong>${s}</strong>` : s;
+            });
 
             partiesHTML += `
             <tr>
                 <td class="col-player" style="${styleA}">${formatPlayerName(jA)}</td>
                 <td class="col-player" style="${styleB}">${formatPlayerName(jB)}</td>
-                <td class="col-set">${sets[0]}</td>
-                <td class="col-set">${sets[1]}</td>
-                <td class="col-set">${sets[2]}</td>
-                <td class="col-set">${sets[3]}</td>
-                <td class="col-set">${sets[4]}</td>
+                <td class="col-set">${formattedSets[0]}</td>
+                <td class="col-set">${formattedSets[1]}</td>
+                <td class="col-set">${formattedSets[2]}</td>
+                <td class="col-set">${formattedSets[3]}</td>
+                <td class="col-set">${formattedSets[4]}</td>
                 <td class="col-score"><span class="${isWinForClub ? 'badge-win' : 'badge-loss'}">${finalSA}-${finalSB}</span></td>
                 <td style="text-align: center; font-size: 0.75rem;">
                     <span class="pts-gain ${ptsClass}">${diff > 0 ? '+' : ''}${diff !== 0 ? diff : ''}</span>
@@ -1022,7 +1038,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 <th class="col-player">${equipeA}</th>
                 <th class="col-player">${equipeB}</th>
                 <th class="col-set">1</th><th class="col-set">2</th><th class="col-set">3</th><th class="col-set">4</th><th class="col-set">5</th>
-                <th class="col-score">S.</th>
+                <th class="col-score">Score</th>
                 <th style="width: 50px; text-align: center; font-size: 0.7rem;">+/-</th>
             </tr></thead>
             <tbody>${partiesHTML}</tbody>
@@ -1145,15 +1161,15 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
         const scoreboardHTML = `
         <div class="premium-scoreboard">
-            <div class="score-digit-box digit-red" style="width: 30px; height: 45px; font-size: 1.6rem;">${outcomeA}</div>
+            <div class="score-digit-box digit-red" style="width: 35px !important; height: 50px !important; font-size: 24px !important;">${outcomeA}</div>
             <div class="score-divider"></div>
-            <div class="score-digit-box digit-black" style="width: 55px; height: 65px; font-size: 2.5rem;">${finalTeamScoreA}</div>
+            <div class="score-digit-box digit-black" style="width: 60px !important; height: 80px !important; font-size: 45px !important;">${finalTeamScoreA}</div>
             <div class="score-divider"></div>
-            <div class="score-digit-box digit-black" style="width: 55px; height: 65px; font-size: 2.5rem;">${finalTeamScoreB}</div>
+            <div class="score-digit-box digit-black" style="width: 60px !important; height: 80px !important; font-size: 45px !important;">${finalTeamScoreB}</div>
             <div class="score-divider"></div>
-            <div class="score-digit-box digit-red" style="width: 30px; height: 45px; font-size: 1.6rem;">${outcomeB}</div>
+            <div class="score-digit-box digit-red" style="width: 35px !important; height: 50px !important; font-size: 24px !important;">${outcomeB}</div>
         </div>
-    `;
+`;
 
         // Clean matchID for consistency
         const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
@@ -1247,13 +1263,13 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             const wpAI = `<!-- wp:paragraph {"align":"center","className":"ttcav-wp-ai"} -->\n<p id="ai-summary-${matchID}" class="has-text-align-center ttcav-wp-ai">${summaryText}</p>\n<!-- /wp:paragraph -->`;
 
             // 4. Photo d'équipe (CENTRÉE)
-            const wpTeamImage = (res.photoURL && res.photoURL !== 'URL_DE_VOTRE_IMAGE') 
-                ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.photoURL}" alt="Photo d'équipe"/></figure>\n<!-- /wp:image -->` 
+            const wpTeamImage = (res.photoURL && res.photoURL !== 'URL_DE_VOTRE_IMAGE')
+                ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.photoURL}" alt="Photo d'équipe"/></figure>\n<!-- /wp:image -->`
                 : '';
 
             // 5. Photo d'action (Conditionnel avant la galerie)
-            const wpActionImage = (res.actionPhotoURL && res.actionPhotoURL !== 'URL_IMAGE_ACTION') 
-                ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.actionPhotoURL}" alt="Photo action du match"/></figure>\n<!-- /wp:image -->` 
+            const wpActionImage = (res.actionPhotoURL && res.actionPhotoURL !== 'URL_IMAGE_ACTION')
+                ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.actionPhotoURL}" alt="Photo action du match"/></figure>\n<!-- /wp:image -->`
                 : '';
 
             const wpGallery = `<!-- wp:gallery {"linkTo":"none"} -->\n<figure class="wp-block-gallery has-nested-images columns-default is-cropped"></figure>\n<!-- /wp:gallery -->`;
@@ -1266,8 +1282,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         }
 
         // Modal/App View mode
-        const appPhotoHTML = (res.photoURL && res.photoURL !== 'URL_DE_VOTRE_IMAGE') 
-            ? `<div style="text-align:center; margin-bottom: 2rem;"><img src="${res.photoURL}" alt="Photo d'équipe" style="max-width:100%; border-radius:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>` 
+        const appPhotoHTML = (res.photoURL && res.photoURL !== 'URL_DE_VOTRE_IMAGE')
+            ? `<div style="text-align:center; margin-bottom: 2rem;"><img src="${res.photoURL}" alt="Photo d'équipe" style="max-width:100%; border-radius:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>`
             : '';
 
         return `
@@ -1378,7 +1394,7 @@ async function generateAISummaryClickHandler(matchID = null, forceRegen = false)
         const ourScore = matchData.isHome ? matchData.scoreA : matchData.scoreB;
         const oppScore = matchData.isHome ? matchData.scoreB : matchData.scoreA;
 
-        const prompt = `Tu es un journaliste sportif spécialisé dans le tennis de table du club TTCAV (les "Jaunes"). 
+        const prompt = `Tu es un journaliste sportif spécialisé dans le tennis de table pour le club ${ourClubName}. 
         Rédige un court paragraphe percutant (environ 3-4 phrases) pour résumer cette rencontre de championnat.
         
         Détails de la rencontre :
@@ -1392,7 +1408,7 @@ async function generateAISummaryClickHandler(matchID = null, forceRegen = false)
         - Sois enthousiaste si on a gagné (notre score > score adverse), encourageant sinon.
         - Mets en avant les joueurs ayant fait un sans-faute (ex: 3V/0D).
         - IMPORTANT : N'utilise QUE les PRÉNOMS des joueurs de notre club (ex: "Ethan" au lieu de "Ethan GILLE").
-        - Utilise un ton de club local (ex: Jaunes, TTCAV). NE mentionne PAS que tu es une IA.
+        - Utilise un ton de club local passionné. NE mentionne PAS que tu es une IA.
         - Réponds directement par le paragraphe, sans introduction ni guillemets.`;
 
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -1605,37 +1621,39 @@ function getWordPressCSS() {
 
 /* Conteneur Global */
 .ttcav-export-wrapper {
-    font-family: 'Inter', sans-serif !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
     max-width: 1000px !important;
     margin: 60px auto !important;
     color: #1e293b !important;
-    line-height: 1.7 !important;
+    line-height: 28px !important;
     padding: 0 20px !important;
     text-align: center !important;
+    display: block !important;
 }
 
-/* Titre Principal - Equipe 1 & 2 */
+/* Titre Principal - Bypass Styles WP/Hestia */
 .ttcav-wp-main-title {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 3.5rem !important;
+    font-size: 48px !important;
     font-weight: 800 !important;
     text-align: center !important;
     text-transform: uppercase !important;
     color: #1e293b !important;
-    margin: 4rem auto !important;
-    line-height: 1.1 !important;
-    letter-spacing: -2px !important;
+    margin: 60px auto 10px auto !important;
+    line-height: 52px !important;
+    letter-spacing: -1px !important;
     display: block !important;
+    border: none !important;
 }
 
 /* VS Stylisé */
 .ttcav-wp-vs {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 1.4rem !important;
+    font-size: 18px !important;
     font-weight: 800 !important;
     text-align: center !important;
     color: #eab308 !important;
-    margin: 2rem 0 !important;
+    margin: 25px 0 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -1646,20 +1664,21 @@ function getWordPressCSS() {
 .ttcav-wp-vs::before, .ttcav-wp-vs::after {
     content: "" !important;
     flex: 1 !important;
-    height: 2px !important;
+    height: 1px !important;
     background: #e2e8f0 !important;
-    margin: 0 2rem !important;
+    margin: 0 30px !important;
 }
 
 .export-subtitle {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 1.6rem !important;
+    font-size: 20px !important;
     font-weight: 700 !important;
     color: #94a3b8 !important;
     text-align: center !important;
     text-transform: uppercase !important;
     letter-spacing: 3px !important;
-    margin-bottom: 3rem !important;
+    margin-bottom: 40px !important;
+    display: block !important;
 }
 
 /* Scoreboard */
@@ -1669,11 +1688,11 @@ function getWordPressCSS() {
     align-items: center !important;
     gap: 12px !important;
     background: #1e293b !important;
-    padding: 24px 32px !important;
-    border-radius: 20px !important;
+    padding: 20px 28px !important;
+    border-radius: 16px !important;
     width: fit-content !important;
-    margin: 3rem auto !important;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1) !important;
+    margin: 40px auto !important;
+    box-shadow: 0 15px 20px -5px rgba(0, 0, 0, 0.1) !important;
 }
 
 .score-digit-box {
@@ -1683,89 +1702,82 @@ function getWordPressCSS() {
     justify-content: center !important;
     font-weight: 900 !important;
     font-family: 'Arial Black', Gadget, sans-serif !important;
-    border-radius: 6px !important;
-    width: 60px;
-    height: 80px;
-    font-size: 3rem;
-    box-shadow: 0 4px 0 #cbd5e1 !important;
+    border-radius: 5px !important;
+    box-shadow: 0 3px 0 #cbd5e1 !important;
 }
 
-.score-divider {
-    width: 4px !important;
-    height: 4px !important;
-    background: #475569 !important;
-    border-radius: 50% !important;
-    opacity: 0.3 !important;
-    margin: 0 2px !important;
-}
+.digit-red { color: #ef4444 !important; }
+.digit-black { color: #1e293b !important; }
 
-.digit-red { color: #e11d48 !important; }
-.digit-black { color: #0f172a !important; }
-
-/* Boitier IA */
 .ttcav-wp-ai {
     background: #f8fafc !important;
     border: 1px solid #e2e8f0 !important;
-    border-radius: 20px !important;
-    padding: 25px 30px !important;
-    margin: 2rem auto 4rem auto !important;
-    font-size: 0.95rem !important;
-    line-height: 1.7 !important;
+    border-radius: 16px !important;
+    padding: 25px 35px !important;
+    margin: 30px auto 50px auto !important;
+    font-size: 16px !important;
+    line-height: 26px !important;
     color: #334155 !important;
     position: relative !important;
     text-align: center !important;
     display: block !important;
-    max-width: 900px !important;
+    max-width: 850px !important;
+    font-style: italic !important;
 }
 
 .section-title {
     font-family: 'Outfit', sans-serif !important;
     text-align: center !important;
-    font-size: 1.1rem !important;
+    font-size: 18px !important;
     font-weight: 700 !important;
     color: #94a3b8 !important;
     text-transform: uppercase !important;
     letter-spacing: 3px !important;
-    margin: 5rem 0 2rem !important;
+    margin: 70px auto 25px auto !important;
+    display: block !important;
 }
 
 .premium-table {
     width: 100% !important;
     border-collapse: separate !important;
     border-spacing: 0 !important;
-    margin-bottom: 3rem !important;
-    border-radius: 16px !important;
+    margin: 25px auto 35px auto !important;
+    border-radius: 12px !important;
     overflow: hidden !important;
     border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    display: table !important;
 }
 
 .premium-table th {
     background: #f8fafc !important;
     color: #64748b !important;
     font-weight: 700 !important;
-    padding: 0.6rem 0.8rem !important;
+    padding: 8px 10px !important;
     text-align: left !important;
-    font-size: 0.8rem !important;
+    font-size: 12px !important;
     text-transform: uppercase !important;
+    border-bottom: 1px solid #f1f5f9 !important;
     border-right: 1px solid #f1f5f9 !important;
 }
 
 .premium-table td {
-    padding: 0.6rem 0.8rem !important;
+    padding: 8px 10px !important;
     border-bottom: 1px solid #f1f5f9 !important;
     border-right: 1px solid #f1f5f9 !important;
-    font-size: 0.9rem !important;
+    font-size: 14px !important;
+    text-align: left !important;
+    color: #1e293b !important;
 }
 
-.premium-table td.col-player {
-    padding-left: 2rem !important;
-}
+.premium-table td.col-player { white-space: nowrap !important; }
+.premium-table tr:nth-child(even) { background-color: #f8fafc !important; }
 
 .match-sets-sum {
     text-align: right !important;
-    font-size: 1rem !important;
+    font-size: 14px !important;
     color: #94a3b8 !important;
-    margin: -1.5rem 0 4rem !important;
+    margin: -15px 0 50px auto !important;
     font-weight: 500 !important;
 }
 
@@ -1773,39 +1785,25 @@ function getWordPressCSS() {
     text-align: center !important;
     background: #f8fafc !important;
     color: #64748b !important;
-    padding: 1.5rem !important;
-    border-radius: 12px !important;
+    padding: 20px !important;
+    border-radius: 10px !important;
     font-weight: 700 !important;
-    font-size: 0.95rem !important;
-    margin: 4rem 0 !important;
+    font-size: 14px !important;
+    margin: 50px auto !important;
     border: 1px dashed #cbd5e1 !important;
     text-transform: uppercase !important;
     letter-spacing: 1px !important;
 }
 
-.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 8px 16px !important; border-radius: 10px !important; font-weight: 700 !important; }
-.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 8px 16px !important; border-radius: 10px !important; font-weight: 700 !important; }
+.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 6px 12px !important; border-radius: 8px !important; font-weight: 800 !important; }
+.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 6px 12px !important; border-radius: 8px !important; font-weight: 800 !important; }
 
-.match-separator {
-    height: 1px !important;
-    background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important;
-    margin: 10rem auto !important;
-    max-width: 600px !important;
-    position: relative !important;
-    border: none !important;
-}
+.pts-pos { color: #10b981 !important; font-weight: 700 !important; }
+.pts-neg { color: #ef4444 !important; font-weight: 700 !important; }
+.pts-neu { color: #94a3b8 !important; }
 
-.match-separator::after {
-    content: "◈" !important;
-    position: absolute !important;
-    left: 50% !important;
-    top: 50% !important;
-    transform: translate(-50%, -50%) !important;
-    background: white !important;
-    padding: 0 1.5rem !important;
-    color: #cbd5e1 !important;
-    font-size: 1.5rem !important;
-}
+.match-separator { height: 1px !important; background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important; margin: 100px auto !important; max-width: 600px !important; position: relative !important; border: none !important; }
+.match-separator::after { content: "◈" !important; position: absolute !important; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; background: white !important; padding: 0 15px !important; color: #94a3b8 !important; font-size: 18px !important; }
 
 @media (max-width: 768px) {
     .ttcav-export-wrapper { margin: 20px auto !important; padding: 0 10px !important; }
@@ -1827,8 +1825,8 @@ function getWordPressCSS() {
     .ttcav-wp-ai { padding: 20px !important; margin: 2rem 0 !important; font-size: 0.95rem !important; border-left-width: 4px !important; }
     .section-title { margin: 4rem 0 1.5rem !important; font-size: 1rem !important; }
     .premium-table { margin-bottom: 3rem !important; border-radius: 12px !important; }
-    .premium-table th, .premium-table td { font-size: 0.65rem !important; padding: 4px 2px !important; }
-    .premium-table td.col-player { padding-left: 6px !important; }
+    .premium-table th, .premium-table td { font-size: 0.65rem !important; padding: 4px 2px !important; line-height: 1.2 !important; }
+    .premium-table td.col-player { padding-left: 6px !important; white-space: normal !important; }
     .match-sets-sum { font-size: 0.85rem !important; margin: -1.5rem 0 3rem !important; }
     .summary-footer { padding: 1.5rem !important; font-size: 1rem !important; margin: 3rem 0 !important; }
     .mobile-br { display: block !important; height: 0; }
@@ -1872,7 +1870,7 @@ function formatPlayerName(name) {
                 return sub[0] + ' <br class="mobile-br"><span class="mobile-only-indent"></span>' + sub.slice(1).join(' ');
             }
             return p;
-        }).join(' <br class="mobile-br"><span class="double-sep">/</span> ');
+        }).join(' /<br>');
     }
     // Si c'est un joueur individuel
     const sub = name.trim().split(' ');
