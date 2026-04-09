@@ -1192,7 +1192,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
     if (isBatch) {
         // WordPress BLOCK MODE
-        const wpTitle = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n<h2 class="ttcav-wp-title">${equipeA} – ${equipeB}</h2>\n</div>\n<!-- /wp:html -->`;
+        const wpTitle = `<!-- wp:html -->\n<div class="ttcav-export-wrapper" style="text-align:center; margin-bottom: 2rem;">\n<h2 class="ttcav-wp-main-title">${equipeA}</h2>\n<div class="ttcav-wp-vs"><span>VS</span></div>\n<h2 class="ttcav-wp-main-title">${equipeB}</h2>\n</div>\n<!-- /wp:html -->`;
         
         const wpHeader = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n<div class="export-subtitle">${res.category}</div>\n${scoreboardHTML}\n</div>\n<!-- /wp:html -->`;
         
@@ -1204,17 +1204,21 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         
         const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>\n</div>\n<!-- /wp:html -->`;
 
-        return `${wpTitle}\n${wpHeader}\n${wpAI}\n${wpImage}\n${wpGallery}\n${wpFooter}`;
+        const wpSpacer = `<!-- wp:spacer {"height":"100px"} -->\n<div style="height:100px" aria-hidden="true" class="wp-block-spacer"></div>\n<!-- /wp:spacer -->`;
+
+        return `${wpTitle}\n${wpHeader}\n${wpAI}\n${wpImage}\n${wpGallery}\n${wpFooter}\n${wpSpacer}`;
     }
 
     // Modal/App View mode
     return `
         <style>${getWordPressCSS()}</style>
-        <div class="ttcav-export-wrapper" style="background: white; padding: 20px; border-radius: 12px;">
+        <div class="ttcav-export-wrapper" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 150px; border-bottom: 2px solid #f1f5f9;">
             <div class="match-detail-block" id="block-${matchID}">
-                <div class="export-header">
-                    <h2 class="ttcav-wp-title" style="margin-top:0 !important;">${equipeA} – ${equipeB}</h2>
-                    <div class="export-subtitle">${res.category}</div>
+                <div class="export-header" style="text-align:center;">
+                    <h1 class="ttcav-wp-main-title">${equipeA}</h1>
+                    <div class="ttcav-wp-vs"><span>VS</span></div>
+                    <h1 class="ttcav-wp-main-title">${equipeB}</h1>
+                    <div class="export-subtitle" style="margin-top: 1.5rem;">${res.category}</div>
                     <div style="text-align:center; margin-bottom: 2rem;"><img src="URL_DE_VOTRE_IMAGE" alt="Photo d'équipe" style="max-width:100%; border-radius:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
                     ${scoreboardHTML}
                 </div>
@@ -1537,16 +1541,40 @@ function getWordPressCSS() {
     line-height: 1.6 !important;
 }
 
-/* Titre - Style Image 1 */
-.ttcav-wp-title {
+/* Titre Principal - Equipe 1 & 2 */
+.ttcav-wp-main-title {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 2.2rem !important;
+    font-size: 2.8rem !important;
     font-weight: 800 !important;
     text-align: center !important;
     text-transform: uppercase !important;
     color: #1e293b !important;
-    margin-bottom: 0.5rem !important;
-    letter-spacing: -0.5px !important;
+    margin: 0 !important;
+    line-height: 1.1 !important;
+    letter-spacing: -1px !important;
+}
+
+/* VS Stylisé */
+.ttcav-wp-vs {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 1.2rem !important;
+    font-weight: 800 !important;
+    text-align: center !important;
+    color: #eab308 !important;
+    margin: 1.5rem 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-transform: uppercase !important;
+    letter-spacing: 4px !important;
+}
+
+.ttcav-wp-vs::before, .ttcav-wp-vs::after {
+    content: "" !important;
+    flex: 1 !important;
+    height: 1px !important;
+    background: #e2e8f0 !important;
+    margin: 0 1.5rem !important;
 }
 
 .export-subtitle {
@@ -1665,14 +1693,16 @@ function getWordPressCSS() {
 
 .summary-footer {
     text-align: center !important;
-    background: #1e293b !important;
-    color: #ffffff !important;
-    padding: 3rem !important;
-    border-radius: 20px !important;
-    font-weight: 800 !important;
-    font-size: 1.6rem !important;
-    margin-top: 5rem !important;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1) !important;
+    background: #f8fafc !important;
+    color: #64748b !important;
+    padding: 1.5rem !important;
+    border-radius: 12px !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
+    margin: 4rem 0 !important;
+    border: 1px dashed #cbd5e1 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
 }
 
 .badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 6px 12px !important; border-radius: 8px !important; font-weight: 700 !important; }
