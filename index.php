@@ -41,6 +41,9 @@
                 <h1>TT<span>CAV</span> Export</h1>
             </div>
             <div class="actions">
+                <button class="secondary" id="btn-help-top" title="Guide d'utilisation">
+                    <i class="fas fa-question-circle"></i> Aide
+                </button>
                 <button class="secondary open-settings-btn" title="Paramètres API">
                     <i class="fas fa-cog"></i> Configuration
                 </button>
@@ -163,6 +166,16 @@
     <div id="export-container" style="display: none;">
         <div id="export-panel">
             <!-- Le contenu sera généré dynamiquement -->
+        </div>
+    </div>
+
+    <!-- Modal d'Aide WordPress -->
+    <div class="modal-overlay" id="help-modal-wrapper" style="display: none;">
+        <div class="modal" id="help-modal-container" style="max-width: 900px; width: 95%; border: 1px solid rgba(234, 179, 8, 0.3); background: rgba(15, 23, 42, 0.98); backdrop-filter: blur(20px);">
+            <span class="close-btn" id="close-help-modal" style="position: absolute; top: 1.5rem; right: 1.5rem; font-size: 2rem; cursor: pointer; color: var(--text-muted);">&times;</span>
+            <div id="help-content-area" class="help-modal-content">
+                <!-- Chargé par JS -->
+            </div>
         </div>
     </div>
 
