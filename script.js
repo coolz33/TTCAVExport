@@ -1111,8 +1111,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
             partiesHTML += `
             <tr>
-                <td class="col-player" ${styleA}>${formatPlayerName(jA)}</td>
-                <td class="col-player" ${styleB}>${formatPlayerName(jB)}</td>
+                <td class="col-player ${finalSA > finalSB ? 'player-win' : 'player-loss'}">${formatPlayerName(jA)}</td>
+                <td class="col-player ${finalSB > finalSA ? 'player-win' : 'player-loss'}">${formatPlayerName(jB)}</td>
                 <td class="col-set">${formattedSets[0]}</td>
                 <td class="col-set">${formattedSets[1]}</td>
                 <td class="col-set">${formattedSets[2]}</td>
@@ -2215,11 +2215,42 @@ function getWordPressCSS() {
 }
 
 @media (max-width: 768px) {
-    .section-title { margin: 4rem 0 1.5rem !important; font-size: 1.1rem !important; letter-spacing: 2px !important; }
-    .ttcav-export-wrapper, .ttcav-export-global { font-size: 14px !important; }
-    .premium-table td, .premium-table th { font-size: 12px !important; padding: 8px 5px !important; }
-    .compo-total-row { font-size: 12px !important; }
-    .ranking-box-val { font-size: 1.1rem !important; }
+    .section-title { margin: 3rem 0 1rem !important; font-size: 1.1rem !important; letter-spacing: 2px !important; }
+    .ttcav-export-wrapper, .ttcav-export-global { font-size: 14px !important; padding: 0 10px !important; }
+    
+    .premium-table th, .premium-table td { 
+        font-size: 10px !important; 
+        padding: 4px 2px !important; 
+        line-height: 1.2 !important; 
+    }
+    
+    .premium-table td.col-set, .premium-table th.col-set, .premium-table td.col-score, .premium-table th.col-score { 
+        min-width: 28px !important; 
+        width: 28px !important; 
+        padding: 4px 1px !important;
+        font-size: 10px !important;
+    }
+
+    .badge-win, .badge-loss { font-size: 10px !important; padding: 2px 4px !important; }
+    
+    .premium-table td.col-player { 
+        white-space: normal !important; 
+        word-wrap: break-word !important; 
+        max-width: 95px !important; 
+        line-height: 1.1 !important;
+        text-align: left !important;
+    }
+    
+    .premium-scoreboard {
+        transform: scale(0.85) !important;
+        transform-origin: center !important;
+        margin: 1.5rem auto !important;
+    }
+
+    .badge-win, .badge-loss { font-size: 10px !important; padding: 2px 4px !important; }
+    .compo-total-row td { font-size: 10px !important; padding: 5px !important; }
+    .ranking-box-val { font-size: 1rem !important; }
+    .summary-footer { padding: 1.5rem !important; font-size: 1.1rem !important; }
 }
 
 .mobile-br { display: none; }
