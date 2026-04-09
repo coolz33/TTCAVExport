@@ -1236,34 +1236,48 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
         if (isBatch) {
             // WordPress BLOCK MODE
-            const wpTitle = `<!-- wp:html -->\n<div class="ttcav-export-wrapper" style="text-align:center; margin-bottom: 2rem;">\n<h2 class="ttcav-wp-main-title">${equipeA}</h2>\n<div class="ttcav-wp-vs"><span>VS</span></div>\n<h2 class="ttcav-wp-main-title">${equipeB}</h2>\n</div>\n<!-- /wp:html -->`;
+            // 1. Titre (Heading Block) - Inclut les 2 équipes et le VS stylisé (CENTRÉ)
+            const wpTitle = `<!-- wp:heading {"textAlign":"center","level":1,"className":"ttcav-wp-main-title"} -->\n<h1 class="has-text-align-center ttcav-wp-main-title">${equipeA}<span class="ttcav-wp-vs">VS</span>${equipeB}</h1>\n<!-- /wp:heading -->`;
 
+            // 2. Sous-titre et Scoreboard
             const wpHeader = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n<div class="export-subtitle">${res.category}</div>\n${scoreboardHTML}\n</div>\n<!-- /wp:html -->`;
 
-            const wpAI = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n<div id="ai-summary-${matchID}" class="ttcav-wp-ai">${state.aiSummaries[matchID] || '<em>Génération du résumé...</em>'}</div>\n</div>\n<!-- /wp:html -->`;
+            // 3. Résumé IA (Paragraph Block) (CENTRÉ)
+            const summaryText = state.aiSummaries[matchID] || '<em>Génération du résumé...</em>';
+            const wpAI = `<!-- wp:paragraph {"align":"center","className":"ttcav-wp-ai"} -->\n<p id="ai-summary-${matchID}" class="has-text-align-center ttcav-wp-ai">${summaryText}</p>\n<!-- /wp:paragraph -->`;
 
-            const wpImage = `<!-- wp:image -->\n<figure class="wp-block-image"><img src="URL_DE_VOTRE_IMAGE" alt="Photo d'équipe"/></figure>\n<!-- /wp:image -->`;
+            // 4. Photo d'équipe (CENTRÉE)
+            const wpTeamImage = (res.photoURL && res.photoURL !== 'URL_DE_VOTRE_IMAGE') 
+                ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.photoURL}" alt="Photo d'équipe"/></figure>\n<!-- /wp:image -->` 
+                : '';
+
+            // 5. Photo d'action (Conditionnel avant la galerie)
+            const wpActionImage = (res.actionPhotoURL && res.actionPhotoURL !== 'URL_IMAGE_ACTION') 
+                ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.actionPhotoURL}" alt="Photo action du match"/></figure>\n<!-- /wp:image -->` 
+                : '';
 
             const wpGallery = `<!-- wp:gallery {"linkTo":"none"} -->\n<figure class="wp-block-gallery has-nested-images columns-default is-cropped"></figure>\n<!-- /wp:gallery -->`;
 
             const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>\n</div>\n<!-- /wp:html -->`;
 
-            const wpSpacer = `<!-- wp:spacer {"height":"100px"} -->\n<div style="height:100px" aria-hidden="true" class="wp-block-spacer"></div>\n<!-- /wp:spacer -->`;
+            const wpSeparator = `<!-- wp:html -->\n<div class="match-separator"></div>\n<!-- /wp:html -->`;
 
-            return `${wpTitle}\n${wpHeader}\n${wpAI}\n${wpImage}\n${wpGallery}\n${wpFooter}\n${wpSpacer}`;
+            return `${wpTitle}\n${wpHeader}\n${wpAI}\n${wpTeamImage}\n${wpActionImage}\n${wpGallery}\n${wpFooter}\n${wpSeparator}`;
         }
 
         // Modal/App View mode
+        const appPhotoHTML = (res.photoURL && res.photoURL !== 'URL_DE_VOTRE_IMAGE') 
+            ? `<div style="text-align:center; margin-bottom: 2rem;"><img src="${res.photoURL}" alt="Photo d'équipe" style="max-width:100%; border-radius:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>` 
+            : '';
+
         return `
         <style>${getWordPressCSS()}</style>
-        <div class="ttcav-export-wrapper" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 150px; border-bottom: 2px solid #f1f5f9;">
+        <div class="ttcav-export-wrapper" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 40px; border-bottom: none;">
             <div class="match-detail-block" id="block-${matchID}">
                 <div class="export-header" style="text-align:center;">
-                    <h1 class="ttcav-wp-main-title">${equipeA}</h1>
-                    <div class="ttcav-wp-vs"><span>VS</span></div>
-                    <h1 class="ttcav-wp-main-title">${equipeB}</h1>
+                    <h1 class="ttcav-wp-main-title">${equipeA}<span class="ttcav-wp-vs">VS</span>${equipeB}</h1>
                     <div class="export-subtitle" style="margin-top: 1.5rem;">${res.category}</div>
-                    <div style="text-align:center; margin-bottom: 2rem;"><img src="URL_DE_VOTRE_IMAGE" alt="Photo d'équipe" style="max-width:100%; border-radius:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>
+                    ${appPhotoHTML}
                     ${scoreboardHTML}
                 </div>
                 <div class="ttcav-export-wrapper" style="display: flex; align-items: center; gap: 15px; margin: 2rem 0 4rem 0;">
@@ -1289,6 +1303,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                     ${rankingSectionHTML}
                 </div>
                 <div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>
+                <div class="match-separator"></div>
             </div>
         </div>
     `;
@@ -1576,60 +1591,75 @@ async function copyAllMatchesToWordPress() {
 function getWordPressCSS() {
     return `@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&family=Inter:wght@400;500;600&display=swap');
 
+/* Utilitaires de Centrage */
+.has-text-align-center {
+    text-align: center !important;
+}
+
+.aligncenter {
+    display: block !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    text-align: center !important;
+}
+
 /* Conteneur Global */
 .ttcav-export-wrapper {
     font-family: 'Inter', sans-serif !important;
-    max-width: 900px !important;
-    margin: 40px auto !important;
+    max-width: 1000px !important;
+    margin: 60px auto !important;
     color: #1e293b !important;
-    line-height: 1.6 !important;
+    line-height: 1.7 !important;
+    padding: 0 20px !important;
+    text-align: center !important;
 }
 
 /* Titre Principal - Equipe 1 & 2 */
 .ttcav-wp-main-title {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 2.8rem !important;
+    font-size: 3.5rem !important;
     font-weight: 800 !important;
     text-align: center !important;
     text-transform: uppercase !important;
     color: #1e293b !important;
-    margin: 0 !important;
+    margin: 4rem auto !important;
     line-height: 1.1 !important;
-    letter-spacing: -1px !important;
+    letter-spacing: -2px !important;
+    display: block !important;
 }
 
 /* VS Stylisé */
 .ttcav-wp-vs {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 1.2rem !important;
+    font-size: 1.4rem !important;
     font-weight: 800 !important;
     text-align: center !important;
     color: #eab308 !important;
-    margin: 1.5rem 0 !important;
+    margin: 2rem 0 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
     text-transform: uppercase !important;
-    letter-spacing: 4px !important;
+    letter-spacing: 6px !important;
 }
 
 .ttcav-wp-vs::before, .ttcav-wp-vs::after {
     content: "" !important;
     flex: 1 !important;
-    height: 1px !important;
+    height: 2px !important;
     background: #e2e8f0 !important;
-    margin: 0 1.5rem !important;
+    margin: 0 2rem !important;
 }
 
 .export-subtitle {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 1.4rem !important;
+    font-size: 1.6rem !important;
     font-weight: 700 !important;
     color: #94a3b8 !important;
     text-align: center !important;
     text-transform: uppercase !important;
-    letter-spacing: 2px !important;
-    margin-bottom: 2rem !important;
+    letter-spacing: 3px !important;
+    margin-bottom: 3rem !important;
 }
 
 /* Scoreboard */
@@ -1654,9 +1684,19 @@ function getWordPressCSS() {
     font-weight: 900 !important;
     font-family: 'Arial Black', Gadget, sans-serif !important;
     border-radius: 6px !important;
-    width: 60px !important;
-    height: 80px !important;
-    font-size: 3rem !important;
+    width: 60px;
+    height: 80px;
+    font-size: 3rem;
+    box-shadow: 0 4px 0 #cbd5e1 !important;
+}
+
+.score-divider {
+    width: 4px !important;
+    height: 4px !important;
+    background: #475569 !important;
+    border-radius: 50% !important;
+    opacity: 0.3 !important;
+    margin: 0 2px !important;
 }
 
 .digit-red { color: #e11d48 !important; }
@@ -1667,13 +1707,15 @@ function getWordPressCSS() {
     background: #f8fafc !important;
     border: 1px solid #e2e8f0 !important;
     border-radius: 20px !important;
-    padding: 25px 50px 25px 25px !important;
-    margin: 2rem 0 4rem 0 !important;
+    padding: 25px 30px !important;
+    margin: 2rem auto 4rem auto !important;
     font-size: 0.95rem !important;
     line-height: 1.7 !important;
     color: #334155 !important;
     position: relative !important;
-    text-align: left !important;
+    text-align: center !important;
+    display: block !important;
+    max-width: 900px !important;
 }
 
 .section-title {
@@ -1741,15 +1783,54 @@ function getWordPressCSS() {
     letter-spacing: 1px !important;
 }
 
-.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 6px 12px !important; border-radius: 8px !important; font-weight: 700 !important; }
-.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 6px 12px !important; border-radius: 8px !important; font-weight: 700 !important; }
+.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 8px 16px !important; border-radius: 10px !important; font-weight: 700 !important; }
+.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 8px 16px !important; border-radius: 10px !important; font-weight: 700 !important; }
+
+.match-separator {
+    height: 1px !important;
+    background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important;
+    margin: 10rem auto !important;
+    max-width: 600px !important;
+    position: relative !important;
+    border: none !important;
+}
+
+.match-separator::after {
+    content: "◈" !important;
+    position: absolute !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    background: white !important;
+    padding: 0 1.5rem !important;
+    color: #cbd5e1 !important;
+    font-size: 1.5rem !important;
+}
 
 @media (max-width: 768px) {
-    .ttcav-wp-main-title { font-size: 1.8rem !important; }
-    .premium-scoreboard { padding: 12px 16px !important; gap: 6px !important; margin: 2rem auto !important; }
-    .score-digit-box { width: 45px !important; height: 55px !important; font-size: 2rem !important; }
-    .premium-table th, .premium-table td { font-size: 0.65rem !important; padding: 0.25rem 0.02rem !important; }
-    .premium-table td.col-player { padding-left: 5px !important; }
+    .ttcav-export-wrapper { margin: 20px auto !important; padding: 0 10px !important; }
+    .ttcav-wp-main-title { font-size: 2.2rem !important; }
+    .ttcav-wp-vs { margin: 1rem 0 !important; font-size: 1rem !important; }
+    .ttcav-wp-vs::before, .ttcav-wp-vs::after { margin: 0 1rem !important; }
+    .export-subtitle { font-size: 1.1rem !important; margin-bottom: 1.5rem !important; }
+    .premium-scoreboard { 
+        padding: 15px 20px !important; 
+        gap: 8px !important; 
+        margin: 2rem auto !important; 
+        border-radius: 16px !important;
+        transform: scale(0.85) !important;
+        transform-origin: center !important;
+    }
+    .score-digit-box { 
+        box-shadow: 0 2px 0 #cbd5e1 !important; 
+    }
+    .ttcav-wp-ai { padding: 20px !important; margin: 2rem 0 !important; font-size: 0.95rem !important; border-left-width: 4px !important; }
+    .section-title { margin: 4rem 0 1.5rem !important; font-size: 1rem !important; }
+    .premium-table { margin-bottom: 3rem !important; border-radius: 12px !important; }
+    .premium-table th, .premium-table td { font-size: 0.65rem !important; padding: 4px 2px !important; }
+    .premium-table td.col-player { padding-left: 6px !important; }
+    .match-sets-sum { font-size: 0.85rem !important; margin: -1.5rem 0 3rem !important; }
+    .summary-footer { padding: 1.5rem !important; font-size: 1rem !important; margin: 3rem 0 !important; }
     .mobile-br { display: block !important; height: 0; }
     .mobile-only-indent { display: block !important; height: 5px; }
     .double-sep { font-weight: 800; color: #8b5cf6; display: block; margin: 2px 0; }
@@ -1772,9 +1853,9 @@ function copyWPHTMLToClipboard() {
     // Injecter les résumés IA dans les blocs paragraph de giantHTMLRaw
     Object.keys(state.aiSummaries).forEach(matchID => {
         const summary = state.aiSummaries[matchID];
-        const placeholder = '<div id="ai-summary-' + matchID + '" class="ttcav-wp-ai"><em>Génération du résumé...</em></div>';
+        const placeholder = '<p id="ai-summary-' + matchID + '" class="has-text-align-center ttcav-wp-ai"><em>Génération du résumé...</em></p>';
         // On remplace le placeholder par le vrai texte dans un bloc propre
-        finalHTML = finalHTML.replace(placeholder, '<div id="ai-summary-' + matchID + '" class="ttcav-wp-ai">' + summary + '</div>');
+        finalHTML = finalHTML.replace(placeholder, '<p id="ai-summary-' + matchID + '" class="has-text-align-center ttcav-wp-ai">' + summary + '</p>');
     });
 
     navigator.clipboard.writeText(finalHTML).then(() => showToast('HTML (Blocks) copié !'));
