@@ -82,7 +82,14 @@ button:hover {
     filter: brightness(1.1);
 }
 
-button.secondary {
+button:disabled, .secondary:disabled, select:disabled, input:disabled {
+    opacity: 0.4;
+    cursor: not-allowed !important;
+    filter: grayscale(1);
+    pointer-events: none;
+}
+
+.secondary {
     background: var(--glass);
     border: 1px solid var(--glass-border);
     box-shadow: none;
@@ -209,8 +216,8 @@ button.secondary:hover {
 /* Results Grid */
 .results-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.2rem;
     margin-top: 2rem;
 }
 
@@ -219,7 +226,7 @@ button.secondary:hover {
     backdrop-filter: blur(12px);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius);
-    padding: 1.8rem;
+    padding: 1.2rem;
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
@@ -429,6 +436,24 @@ button.secondary:hover {
 
 @keyframes spin {
     to { transform: rotate(360deg); }
+}
+
+.btn-refresh-btn i {
+    transition: transform 0.5s ease;
+}
+
+.btn-refresh-btn:hover i {
+    transform: rotate(180deg);
+}
+
+.loading b {
+    color: var(--primary);
+}
+
+.loading small {
+    display: block;
+    margin-top: 0.5rem;
+    opacity: 0.7;
 }
 
 /* --- PREMIUM EXPORT PANEL (MATCHING SCREENSHOTS) --- */
