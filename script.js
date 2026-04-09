@@ -230,15 +230,15 @@ function getVal(v) {
 function cleanTeamName(name) {
     if (!name) return "";
     let n = getVal(name);
-    // Retrait de "Phase X"
     n = n.replace(/PHASE\s*\d+/gi, '').trim();
-    // Titrisation
     return n.split(' ').map(s => {
         if (/^\d+$/.test(s)) return s;
         if (!s) return "";
         return s.charAt(0).toUpperCase() + s.substring(1).toLowerCase();
     }).join(' ');
 }
+
+const norm = s => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").replace(/phase\d/g, "");
 
 function cleanDivisionName(name) {
     if (!name) return "";
@@ -254,7 +254,7 @@ function cleanDivisionName(name) {
     n = n.replace(/REGIONALE\s+(\d+)/gi, 'Régionale $1');
     n = n.replace(/DEPARTEMENTALE\s+(\d+)/gi, 'Départementale $1');
     n = n.replace(/PRE\s+REGIONALE/gi, 'Pré Régionale');
-    n = n.replace(/Mess\s+AURA/gi, '');
+    n = n.replace(/Mess\s+AURA|MESSIEURS\s+AURA/gi, '');
 
     n = n.replace(/\s{2,}/g, ' ').trim();
 
@@ -561,6 +561,7 @@ async function generateResults() {
             }
         }
 
+
         const promises = teamsToProcess.map(async (team) => {
             if (!team) return;
             const teamName = team.libequipe || team.libequ || team.libepr || team.lib || "Équipe";
@@ -618,12 +619,33 @@ async function generateResults() {
 
                     if (sA === '' && sB === '') return;
 
-                    const norm = s => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").replace(/phase\d/g, "");
+                    // Identification simple et infaillible par rapport à l'équipe traitée
                     const nA = norm(getVal(matchFound.equa));
                     const nB = norm(getVal(matchFound.equb));
                     const nTarget = norm(teamName);
-
-                    const isHome = nA.includes(nTarget) || nTarget.includes(nA);
+                    
+                    // On vérifie quel côté contient ou est contenu dans le nom de notre équipe sélectionnée
+                    let isHome = nA.includes(nTarget) || nTarget.includes(nA);
+                    let isAway = nB.includes(nTarget) || nTarget.includes(nB);
+                    
+                    // Si on ne trouve pas l'équipe par son nom complet, on tente un nettoyage (gestion FFTT vs Club)
+                    if (!isHome && !isAway) {
+                        const cleanTarget = nTarget.replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '');
+                        isHome = nA.includes(cleanTarget);
+                        isAway = nB.includes(cleanTarget);
+                    }
+                    
+                    // Par défaut, si toujours pas trouvé ou si duel interne, on privilégie le côté A si match partiel
+                    if (isHome && isAway) {
+                        isHome = (nA === nTarget) || (nA.length > nB.length && nA.includes(nTarget));
+                    } else if (!isHome && isAway) {
+                        isHome = false;
+                    } else if (isHome && !isAway) {
+                        isHome = true;
+                    } else {
+                        // Ultime secours : on cherche le club dans le nom
+                        isHome = nA.includes('villefranche');
+                    }
 
                     state.results.push({
                         teamName: cleanTeamName(teamName),
@@ -655,6 +677,22 @@ async function generateResults() {
 
 if (elements.btnCopyAll) elements.btnCopyAll.disabled = true;
 
+// ===== TRI DES RÉSULTATS PAR DIVISION =====
+function getDivPriority(cat) {
+    const n = (cat || "").toUpperCase();
+    if (n.includes('NATIONALE')) return 100;
+    if (n.includes('REGIONALE')) {
+        const num = parseInt(n.match(/\d+/) || 0);
+        return 90 - num; 
+    }
+    if (n.includes('PRE REGIONALE')) return 80;
+    if (n.includes('DEPARTEMENTALE')) {
+        const num = parseInt(n.match(/\d+/) || 0);
+        return 70 - num;
+    }
+    return 0;
+}
+
 // ===== AFFICHAGE DES RÉSULTATS =====
 function renderResults() {
     const hasResults = state.results.length > 0;
@@ -665,8 +703,10 @@ function renderResults() {
         return;
     }
 
-    // Tri numérique par numéro d'équipe
     state.results.sort((a, b) => {
+        const prioA = getDivPriority(a.category);
+        const prioB = getDivPriority(b.category);
+        if (prioA !== prioB) return prioB - prioA;
         const numA = parseInt(a.teamName.match(/\d+/) || 0);
         const numB = parseInt(b.teamName.match(/\d+/) || 0);
         return numA - numB;
@@ -768,8 +808,48 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         const currentPhaseText = phaseVal === 'all' ? 'Saison' : phaseVal;
         const summaryLabel = `Bilan ${currentPhaseText}`;
 
-        const equipeA = p.equa || 'Equipe A';
-        const equipeB = p.equb || 'Equipe B';
+        const nameCache = JSON.parse(localStorage.getItem('ttcav_names_cache_v4') || '{}');
+        
+        // Détection ultra-robuste locale pour contrer les inversions de l'API FFTT entre la liste et le détail
+        const clean = (s) => norm(s).replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '').replace(/\s+/g, '');
+        const isClubSide = (rawName) => {
+            const n = clean(rawName);
+            const nNum = norm(rawName).match(/\d+$/);
+            return state.teams.some(t => {
+                const myRaw = t.libequipe || t.libequ || t.libepr || t.lib || "";
+                const myN = clean(myRaw);
+                const myNum = norm(myRaw).match(/\d+$/);
+                if ((myN.includes(n) || n.includes(myN)) && n.length > 2) {
+                    if (myNum && nNum) return myNum[0] === nNum[0];
+                    return true;
+                }
+                return false;
+            });
+        };
+
+        const sideAIsClub = isClubSide(p.equa);
+        const sideBIsClub = isClubSide(p.equb);
+        
+        // On s'assure qu'on ne traite pas les deux comme club (cas extrême)
+        let finalSideAIsClub = sideAIsClub;
+        let finalSideBIsClub = sideBIsClub;
+        if (sideAIsClub && sideBIsClub) {
+             const nTarget = norm(res.teamName);
+             finalSideAIsClub = norm(p.equa).includes(nTarget) || nTarget.includes(norm(p.equa));
+             finalSideBIsClub = !finalSideAIsClub;
+        }
+
+        const getStd = (raw, sideIsClub) => {
+            if (!sideIsClub) return nameCache[raw] || raw;
+            const num = (raw.match(/\d+/) || [""])[0];
+            return `Villefranche TTCAV ${num}`.trim();
+        };
+
+        const equipeA = getStd(p.equa || 'Equipe A', finalSideAIsClub);
+        const equipeB = getStd(p.equb || 'Equipe B', finalSideBIsClub);
+        
+        // On définit la référence HOME pour toute la suite de la fonction
+        const isActuallyHome = finalSideAIsClub;
 
         // Scores : l'API detail renvoie resa/resb, on fallback sur le score de la liste
         let tmpScoreA = parseInt(p.resa);
@@ -844,7 +924,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         let compoHTML = `
         <div class="section-title">La composition des équipes</div>
         <table class="premium-table">
-            <thead><tr><th style="padding: 1rem;">${equipeA}</th><th style="padding: 1rem;">${equipeB}</th></tr></thead>
+            <thead><tr><th class="col-header-large">${equipeA}</th><th class="col-header-large">${equipeB}</th></tr></thead>
             <tbody>
     `;
 
@@ -852,20 +932,20 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             let htmlA = '';
             if (jouas[i]) {
                 let nomHTML = jouas[i].isCap ? `<b>${jouas[i].nom}</b>` : jouas[i].nom;
-                htmlA = `<div style="display:flex; justify-content:space-between;"><span>${nomHTML}</span><span>${jouas[i].classement}</span></div>`;
+                htmlA = `<div class="compo-player-box"><span>${nomHTML}</span><span>${jouas[i].classement}</span></div>`;
             }
             let htmlB = '';
             if (joubs[i]) {
                 let nomHTML = joubs[i].isCap ? `<b>${joubs[i].nom}</b>` : joubs[i].nom;
-                htmlB = `<div style="display:flex; justify-content:space-between;"><span>${nomHTML}</span><span>${joubs[i].classement}</span></div>`;
+                htmlB = `<div class="compo-player-box"><span>${nomHTML}</span><span>${joubs[i].classement}</span></div>`;
             }
             compoHTML += `<tr><td class="col-player">${htmlA}</td><td class="col-player">${htmlB}</td></tr>`;
         }
 
         compoHTML += `
-        <tr class="compo-total-row" style="background: #f1f5f9; font-weight: 700; font-size: 0.85rem; color: #475569; text-align: center; text-transform: uppercase;">
-            <td style="padding: 0.5rem 1rem;">TOTAL POINTS EQUIPE : ${equipeAPoints}</td>
-            <td style="padding: 0.5rem 1rem;">TOTAL POINTS EQUIPE : ${equipeBPoints}</td>
+        <tr class="compo-total-row">
+            <td>TOTAL POINTS EQUIPE : ${equipeAPoints}</td>
+            <td>TOTAL POINTS EQUIPE : ${equipeBPoints}</td>
         </tr>
     </tbody></table>`;
 
@@ -958,7 +1038,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             totalSetsA += finalSA;
             totalSetsB += finalSB;
 
-            const isWinForClub = res.isHome ? (finalSA > finalSB) : (finalSB > finalSA);
+            const isWinForClub = isActuallyHome ? (finalSA > finalSB) : (finalSB > finalSA);
 
             let rowPoints = 0;
             if (jA && jB && jA !== '-' && jB !== '-' && !jA.toLowerCase().includes('double') && !jB.toLowerCase().includes('double')) {
@@ -967,7 +1047,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 if (playerA && playerB && playerA.rawPoints && playerB.rawPoints) {
                     let gainA = getPointsGained(playerA.rawPoints, playerB.rawPoints, finalSA > finalSB);
                     let gainB = getPointsGained(playerB.rawPoints, playerA.rawPoints, finalSB > finalSA);
-                    if (res.isHome) { rowPoints = gainA; if (clubStats[jA]) clubStats[jA].ptsMatch += rowPoints; }
+                    if (isActuallyHome) { rowPoints = gainA; if (clubStats[jA]) clubStats[jA].ptsMatch += rowPoints; }
                     else { rowPoints = gainB; if (clubStats[jB]) clubStats[jB].ptsMatch += rowPoints; }
                 }
             } else if (jA.toLowerCase().includes('double') || jA.includes('/') || jB.includes('/')) {
@@ -989,14 +1069,28 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 });
             }
 
-            const styleA = finalSA > finalSB ? 'font-weight: bold !important; color: #011 !important;' : 'font-weight: normal !important;';
-            const styleB = finalSB > finalSA ? 'font-weight: bold !important; color: #011 !important;' : 'font-weight: normal !important;';
+            const styleA = finalSA > finalSB ? 'class="player-win"' : '';
+            const styleB = finalSB > finalSA ? 'class="player-win"' : '';
 
             const diff = rowPoints;
             const ptsClass = diff > 0 ? 'pts-pos' : (diff < 0 ? 'pts-neg' : 'pts-neu');
 
             const formattedSets = sets.map(s => {
                 if (!s || s === '-') return '-';
+                
+                // Si le score est déjà au format "11-8" ou "8-11" (donc contient un tiret qui n'est pas le signe moins)
+                if (typeof s === 'string' && s.includes('-') && s.indexOf('-') > 0) {
+                    const parts = s.split('-');
+                    let p1 = parseInt(parts[0]), p2 = parseInt(parts[1]);
+                    if (!isNaN(p1) && !isNaN(p2)) {
+                        const aWinsSet = p1 > p2;
+                        const clubWinsSet = isActuallyHome ? aWinsSet : !aWinsSet;
+                        const scorePadded = `${p1 < 10 ? '0'+p1 : p1}-${p2 < 10 ? '0'+p2 : p2}`;
+                        return clubWinsSet ? `<strong>${scorePadded}</strong>` : scorePadded;
+                    }
+                    return s;
+                }
+
                 let val = parseInt(s);
                 if (isNaN(val)) return s;
 
@@ -1005,27 +1099,27 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 let scoreText = "";
 
                 if (val > 0) {
-                    scoreText = `${winVal}-${absVal < 10 ? '0' + absVal : absVal}`;
+                    scoreText = `${winVal < 10 ? '0' + winVal : winVal}-${absVal < 10 ? '0' + absVal : absVal}`;
                 } else {
-                    scoreText = `${absVal < 10 ? '0' + absVal : absVal}-${winVal}`;
+                    scoreText = `${absVal < 10 ? '0' + absVal : absVal}-${winVal < 10 ? '0' + winVal : winVal}`;
                 }
 
                 const aWinsVal = val > 0;
-                const clubWins = res.isHome ? aWinsVal : !aWinsVal;
+                const clubWins = isActuallyHome ? aWinsVal : !aWinsVal;
                 return clubWins ? `<strong>${scoreText}</strong>` : scoreText;
             });
 
             partiesHTML += `
             <tr>
-                <td class="col-player" style="${styleA}">${formatPlayerName(jA)}</td>
-                <td class="col-player" style="${styleB}">${formatPlayerName(jB)}</td>
+                <td class="col-player" ${styleA}>${formatPlayerName(jA)}</td>
+                <td class="col-player" ${styleB}>${formatPlayerName(jB)}</td>
                 <td class="col-set">${formattedSets[0]}</td>
                 <td class="col-set">${formattedSets[1]}</td>
                 <td class="col-set">${formattedSets[2]}</td>
                 <td class="col-set">${formattedSets[3]}</td>
                 <td class="col-set">${formattedSets[4]}</td>
                 <td class="col-score"><span class="${isWinForClub ? 'badge-win' : 'badge-loss'}">${finalSA}-${finalSB}</span></td>
-                <td style="text-align: center; font-size: 0.75rem;">
+                <td class="col-pts-diff">
                     <span class="pts-gain ${ptsClass}">${diff > 0 ? '+' : ''}${diff !== 0 ? diff : ''}</span>
                 </td>
             </tr>
@@ -1040,14 +1134,14 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 <th class="col-player">${equipeB}</th>
                 <th class="col-set">1</th><th class="col-set">2</th><th class="col-set">3</th><th class="col-set">4</th><th class="col-set">5</th>
                 <th class="col-score">Score</th>
-                <th style="width: 50px; text-align: center; font-size: 0.7rem;">+/-</th>
+                <th class="col-pts-diff">+/-</th>
             </tr></thead>
             <tbody>${partiesHTML}</tbody>
         </table>`;
 
         // ===== STATISTIQUES INDIVIDUELLES =====
         // Seulement les joueurs du club (pas les adversaires)
-        const ourPlayers = res.isHome ? jouas : joubs;
+        const ourPlayers = isActuallyHome ? jouas : joubs;
         const stats = {};
         ourPlayers.forEach(j => {
             if (j.nom) stats[j.nom.trim()] = { v: 0, d: 0 };
@@ -1081,11 +1175,11 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             }
 
             // Compter V/D uniquement pour nos joueurs
-            if (res.isHome && ja) {
+            if (isActuallyHome && ja) {
                 let matched = Object.keys(stats).find(k => k === ja || k.includes(ja) || ja.includes(k));
                 if (matched) { if (setsWonA > setsWonB) stats[matched].v++; else stats[matched].d++; }
             }
-            if (!res.isHome && jb) {
+            if (!isActuallyHome && jb) {
                 let matched = Object.keys(stats).find(k => k === jb || k.includes(jb) || jb.includes(k));
                 if (matched) { if (setsWonB > setsWonA) stats[matched].v++; else stats[matched].d++; }
             }
@@ -1110,7 +1204,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                     let jb = (getVal(m.jb) || '').toLowerCase().replace(' et ', ' / ');
 
                     if (ja.includes('/') || jb.includes('/') || ja.includes('double') || jb.includes('double')) {
-                        const ourSide = res.isHome ? ja : jb;
+                        const ourSide = isActuallyHome ? ja : jb;
 
                         // On vérifie si une partie significative du nom est présente
                         const found = searchParts.some(part => ourSide.includes(part));
@@ -1124,7 +1218,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                                 if (sets.length < 2) sets = [m.ms1, m.ms2, m.ms3, m.ms4, m.ms5];
                                 sets.forEach(s => { let v = parseInt(s); if (!isNaN(v)) { if (v > 0) finalSA++; else finalSB++; } });
                             }
-                            const isWin = res.isHome ? (finalSA > finalSB) : (finalSB > finalSA);
+                            const isWin = isActuallyHome ? (finalSA > finalSB) : (finalSB > finalSA);
                             c.doubleResult = isWin ? 'V' : 'D';
                         }
                     }
@@ -1162,13 +1256,13 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
         const scoreboardHTML = `
         <div class="premium-scoreboard">
-            <div class="score-digit-box digit-red" style="width: 35px !important; height: 50px !important; font-size: 24px !important;">${outcomeA}</div>
+            <div class="score-digit-box digit-red score-box-small">${outcomeA}</div>
             <div class="score-divider"></div>
-            <div class="score-digit-box digit-black" style="width: 60px !important; height: 80px !important; font-size: 45px !important;">${finalTeamScoreA}</div>
+            <div class="score-digit-box digit-black score-box-large">${finalTeamScoreA}</div>
             <div class="score-divider"></div>
-            <div class="score-digit-box digit-black" style="width: 60px !important; height: 80px !important; font-size: 45px !important;">${finalTeamScoreB}</div>
+            <div class="score-digit-box digit-black score-box-large">${finalTeamScoreB}</div>
             <div class="score-divider"></div>
-            <div class="score-digit-box digit-red" style="width: 35px !important; height: 50px !important; font-size: 24px !important;">${outcomeB}</div>
+            <div class="score-digit-box digit-red score-box-small">${outcomeB}</div>
         </div>
 `;
 
@@ -1183,7 +1277,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             scoreB: finalTeamScoreB,
             category: res.category,
             stats: stats,
-            isHome: res.isHome,
+            isHome: isActuallyHome,
             ourTeamName: res.teamName
         };
         state.matchDataRegistry[matchID] = mData;
@@ -1213,14 +1307,14 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                     (e.equipe && e.equipe.toLowerCase().includes(res.teamName.toLowerCase()));
 
                 rankingTable += `
-                 <tr style="${isUs ? 'background: #f0f9ff; font-weight: 800; color: #1e293b !important;' : ''}">
-                    <td style="text-align: center; ${isUs ? 'font-weight: 800;' : ''}">${e.rang_affiche}</td>
-                    <td style="${isUs ? 'font-weight: 800;' : ''}">${cleanTeamName(getVal(e.equipe))}</td>
-                    <td style="${isUs ? 'font-weight: 800;' : ''}">${e.pts}</td>
-                    <td style="${isUs ? 'font-weight: 800;' : ''}">${e.joue}</td>
-                    <td style="${isUs ? 'font-weight: 800;' : ''}">${e.vic}</td>
-                    <td style="${isUs ? 'font-weight: 800;' : ''}">${e.nul}</td>
-                    <td style="${isUs ? 'font-weight: 800;' : ''}">${e.def}</td>
+                 <tr class="${isUs ? 'ranking-row-us' : ''}">
+                    <td class="col-rank-num">${e.rang_affiche}</td>
+                    <td class="col-rank-team">${cleanTeamName(getVal(e.equipe))}</td>
+                    <td class="col-rank-pts">${e.pts}</td>
+                    <td class="col-rank-std">${e.joue}</td>
+                    <td class="col-rank-std">${e.vic}</td>
+                    <td class="col-rank-std">${e.nul}</td>
+                    <td class="col-rank-std">${e.def}</td>
                 </tr>
             `;
             });
@@ -1230,17 +1324,17 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             if (myEntry) {
                 summaryBlock = `
                 <div class="section-title">${summaryLabel}</div>
-                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 2rem;">
-                    <div>
-                        <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700;">Classement Actuel</div>
-                        <div style="font-size: 1.5rem; font-weight: 800; color: #1e293b;">${myEntry.rang_affiche}<sup>${myEntry.rang_affiche == 1 ? 'er' : 'ème'}</sup> / ${list.length}</div>
+                <div class="ranking-top-box">
+                    <div class="ranking-box-item">
+                        <div class="ranking-box-label">Classement Actuel</div>
+                        <div class="ranking-box-val">${myEntry.rang_affiche}<sup>${myEntry.rang_affiche == 1 ? 'er' : 'ème'}</sup> / ${list.length}</div>
                     </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: 700;">${summaryLabel}</div>
-                        <div style="font-size: 1.1rem; color: #334155; font-weight: 600;">
-                            <span style="color: #10b981;">${myEntry.vic}V</span> - 
-                            <span style="color: #64748b;">${myEntry.nul}N</span> - 
-                            <span style="color: #ef4444;">${myEntry.def}D</span>
+                    <div class="ranking-box-item item-right">
+                        <div class="ranking-box-label">${summaryLabel}</div>
+                        <div class="ranking-box-val">
+                            <span class="val-v">${myEntry.vic}V</span> - 
+                            <span class="val-n">${myEntry.nul}N</span> - 
+                            <span class="val-d">${myEntry.def}D</span>
                         </div>
                     </div>
                 </div>
@@ -1248,13 +1342,13 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             }
             rankingSectionHTML = summaryBlock + rankingTable;
         } else {
-            rankingSectionHTML = `<div style="text-align:center; padding: 1rem; color: #94a3b8; font-style: italic;">Données de classement non disponibles pour cette poule.</div>`;
+            rankingSectionHTML = `<div class="rank-not-available">Données de classement non disponibles pour cette poule.</div>`;
         }
 
         if (isBatch) {
             // WordPress BLOCK MODE
             // 1. Titre (Heading Block) - Inclut les 2 équipes et le VS stylisé (CENTRÉ)
-            const wpTitle = `<!-- wp:heading {"textAlign":"center","level":1,"className":"ttcav-wp-main-title"} -->\n<h1 class="has-text-align-center ttcav-wp-main-title">${equipeA}<span class="ttcav-wp-vs">VS</span>${equipeB}</h1>\n<!-- /wp:heading -->`;
+            const wpTitle = `<!-- wp:heading {"textAlign":"center","level":1,"className":"ttcav-wp-main-title","anchor":"anchor-${matchID}"} -->\n<h1 id="anchor-${matchID}" class="has-text-align-center ttcav-wp-main-title">${equipeA}<span class="ttcav-wp-vs">VS</span>${equipeB}</h1>\n<!-- /wp:heading -->`;
 
             // 2. Sous-titre et Scoreboard
             const wpHeader = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n<div class="export-subtitle">${res.category}</div>\n${scoreboardHTML}\n</div>\n<!-- /wp:html -->`;
@@ -1268,16 +1362,15 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.photoURL}" alt="Photo d'équipe"/></figure>\n<!-- /wp:image -->`
                 : '';
 
-            // 5. Photo d'action (Conditionnel avant la galerie)
-            const wpActionImage = (res.actionPhotoURL && res.actionPhotoURL !== 'URL_IMAGE_ACTION')
-                ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.actionPhotoURL}" alt="Photo action du match"/></figure>\n<!-- /wp:image -->`
-                : '';
+            // 5. Photo d'action (Toujours incluse pour faciliter le remplacement dans WP)
+            const actionURL = (res.actionPhotoURL && res.actionPhotoURL !== 'URL_IMAGE_ACTION') ? res.actionPhotoURL : 'https://placehold.co/1200x600?text=Photo+Action';
+            const wpActionImage = `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${actionURL}" alt="Photo action du match"/></figure>\n<!-- /wp:image -->`;
 
             const wpGallery = `<!-- wp:gallery {"linkTo":"none"} -->\n<figure class="wp-block-gallery has-nested-images columns-default is-cropped"></figure>\n<!-- /wp:gallery -->`;
 
             const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>\n</div>\n<!-- /wp:html -->`;
 
-            const wpSeparator = `<!-- wp:html -->\n<div class="match-separator"></div>\n<!-- /wp:html -->`;
+            const wpSeparator = `<!-- wp:html -->\n<div class="back-to-top-wrapper"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>\n<div class="match-separator"></div>\n<!-- /wp:html -->`;
 
             return `${wpTitle}\n${wpHeader}\n${wpAI}\n${wpTeamImage}\n${wpActionImage}\n${wpGallery}\n${wpFooter}\n${wpSeparator}`;
         }
@@ -1290,7 +1383,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         return `
         <style>${getWordPressCSS()}</style>
         <div class="ttcav-export-wrapper" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 40px; border-bottom: none;">
-            <div class="match-detail-block" id="block-${matchID}">
+            <div class="match-detail-block" id="anchor-${matchID}">
                 <div class="export-header" style="text-align:center;">
                     <h1 class="ttcav-wp-main-title">${equipeA}<span class="ttcav-wp-vs">VS</span>${equipeB}</h1>
                     <div class="export-subtitle" style="margin-top: 1.5rem;">${res.category}</div>
@@ -1320,6 +1413,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                     ${rankingSectionHTML}
                 </div>
                 <div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>
+                <div class="back-to-top-wrapper"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>
                 <div class="match-separator"></div>
             </div>
         </div>
@@ -1390,7 +1484,7 @@ async function generateAISummaryClickHandler(matchID = null, forceRegen = false)
             else if (s.double === 'D') res += ' + Double perdu';
             return res;
         }).join(', ') || 'N/A';
-        const ourClubName = matchData.isHome ? matchData.teamA : matchData.teamB;
+        const ourClubName = matchData.isHome ? "Villefranche TTCAV" : matchData.teamB;
         const opponentName = matchData.isHome ? matchData.teamB : matchData.teamA;
         const ourScore = matchData.isHome ? matchData.scoreA : matchData.scoreB;
         const oppScore = matchData.isHome ? matchData.scoreB : matchData.scoreA;
@@ -1458,32 +1552,30 @@ async function generateAISummaryClickHandler(matchID = null, forceRegen = false)
 // ===== CLIPBOARD =====
 function copyWPHTMLToClipboard() {
     const rawContent = elements.exportPanel.cloneNode(true);
-    // Supprimer les actions, boutons de rafraîchissement IA, et les icônes de chargement
-    rawContent.querySelectorAll('.export-actions, .btn-ai-refresh, [id^="btn-ai-"], button[data-match-id]').forEach(el => el.remove());
-
-    // Nettoyer les textes de chargement résiduels si l'utilisateur copie avant la fin de la génération
-    rawContent.querySelectorAll('.ai-summary-text').forEach(el => {
-        if (el.innerHTML.includes('Chargement') || el.innerHTML.includes('analyse')) {
-            el.innerHTML = '<em>Résumé non disponible.</em>';
-        }
+    const html = state.giantHTMLRaw || "";
+    if (!html) return showToast('Aucun contenu à copier. Générez d\'abord l\'export global.', true);
+    navigator.clipboard.writeText(html).then(() => showToast('HTML WordPress copié !')).catch(err => {
+        console.error('Erreur copie:', err);
+        showToast('Erreur lors de la copie.', true);
     });
-
-    const wpContent = `<!-- wp:html -->
-<div class="ttcav-export-wrapper">
-    ${rawContent.innerHTML}
-</div>
-<!-- /wp:html -->`;
-
-    navigator.clipboard.writeText(wpContent.trim()).then(() => showToast('HTML WordPress copié !'));
 }
 
 
 
 // ===== EXPORT GLOBAL (TOUS LES MATCHS) =====
 async function copyAllMatchesToWordPress() {
-    if (state.results.length === 0) return;
-
+    if (state.results.length === 0) return showToast('Générez d\'abord les résultats.', true);
+    
     setAppBusy(true);
+    updateLoaderStep('Préparation de l\'export global...');
+    
+    // 1. Embellissement des noms des adversaires par IA
+    try {
+        await beautifyOpponentNames();
+    } catch (e) {
+        logDebug("Erreur embellissement IA : " + e.message, "error");
+    }
+
     updateLoaderStep('Vérification du cache des résumés IA...');
 
     // Pré-chargement du cache en parallèle
@@ -1504,6 +1596,7 @@ async function copyAllMatchesToWordPress() {
 
     const originalText = elements.loaderText.textContent;
     let giantHTML = `
+        <div class="ttcav-export-global">
         <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; align-items: center; margin-bottom: 2rem; position: sticky; top: 0; background: #1e293b; padding: 1rem; z-index: 100; border-radius: 0 0 12px 12px;">
             <div id="ai-progress-container" style="flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 10px;">
                 <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
@@ -1545,15 +1638,145 @@ async function copyAllMatchesToWordPress() {
 
         updateLoaderStep('Génération du rapport final...');
 
+        let totals = { v: 0, n: 0, d: 0 };
+        let summaryTableHTML = `
+            <div class="ttcav-export-wrapper" id="summary-top">
+                <div class="section-title">Tableau Récapitulatif</div>
+                <table class="premium-table">
+                    <thead>
+                        <tr>
+                            <th class="col-header-std">Division</th>
+                            <th class="col-header-std-right">Domicile</th>
+                            <th class="col-header-std-center">Score</th>
+                            <th class="col-header-std-left">Extérieur</th>
+                            <th class="col-header-std-center">Bilan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        const allMatches = state.results.sort((a, b) => {
+            const pA = getDivPriority(a.category);
+            const pB = getDivPriority(b.category);
+            if (pA !== pB) return pB - pA;
+            const numA = parseInt(a.teamName.match(/\d+/) || 0);
+            const numB = parseInt(b.teamName.match(/\d+/) || 0);
+            return numA - numB;
+        });
+        
+        allMatches.forEach((res, index) => {
+            const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
+            
+            // Standardisation Villefranche TTCAV
+            const getStandardName = (raw, isHome) => {
+                const nameCache = JSON.parse(localStorage.getItem('ttcav_names_cache_v4') || '{}');
+                if (!isHome) return nameCache[raw] || raw;
+                const num = (raw.match(/\d+/) || [""])[0];
+                return `Villefranche TTCAV ${num}`.trim();
+            };
+
+            const teamHome = getStandardName(res.isHome ? res.teamName : res.opponent, res.isHome);
+            const teamAway = getStandardName(res.isHome ? res.opponent : res.teamName, !res.isHome);
+            
+            // Score ordonné (Home - Away)
+            const scoreA = res.scoreA;
+            const scoreB = res.scoreB;
+            
+            // Bilan relatif à notre club
+            const myScore = res.isHome ? scoreA : scoreB;
+            const opScore = res.isHome ? scoreB : scoreA;
+            
+            let status = 'Nul';
+            let color = '#eab308'; // Nul = Jaune
+            if (myScore > opScore) { 
+                status = 'Victoire'; 
+                color = '#10b981'; // Vert
+                totals.v++;
+            } else if (myScore < opScore) { 
+                status = 'Défaite'; 
+                color = '#ef4444'; // Rouge
+                totals.d++;
+            } else {
+                totals.n++;
+            }
+            
+            // Nettoyage Division (enlever Poule)
+            let cleanCat = (res.category || '').split('– Poule')[0].split('Poule')[0].trim();
+
+            // Style gras pour le vainqueur
+            const styleHome = scoreA > scoreB ? 'font-weight: 800; color: #1e293b;' : 'font-weight: 400; color: #64748b;';
+            const styleAway = scoreB > scoreA ? 'font-weight: 800; color: #1e293b;' : 'font-weight: 400; color: #64748b;';
+
+            summaryTableHTML += `
+                <tr class="summary-row" onclick="window.location.hash='anchor-${matchID}'">
+                    <td class="col-summary-cat"><a href="#anchor-${matchID}">${cleanCat}</a></td>
+                    <td class="col-summary-home"><a href="#anchor-${matchID}" class="${scoreA > scoreB ? 'player-win' : 'player-loss'}">${teamHome}</a></td>
+                    <td class="col-summary-score"><a href="#anchor-${matchID}">${res.score}</a></td>
+                    <td class="col-summary-away"><a href="#anchor-${matchID}" class="${scoreB > scoreA ? 'player-win' : 'player-loss'}">${teamAway}</a></td>
+                    <td class="col-summary-status">
+                        <a href="#anchor-${matchID}" class="status-${status.toLowerCase().replace(/é/g, 'e')}">${status}</a>
+                    </td>
+                </tr>
+            `;
+        });
+
+        summaryTableHTML += `
+                    </tbody>
+                </table>
+                <div class="summary-totals-card">
+                    BILAN DE LA JOURNÉE : 
+                    <span class="total-v">${totals.v} V</span> &nbsp;|&nbsp; 
+                    <span class="total-n">${totals.n} N</span> &nbsp;|&nbsp; 
+                    <span class="total-d">${totals.d} D</span>
+                </div>
+            </div>
+        `;
+
+        giantHTML += summaryTableHTML;
+        
+        // Ajout du tableau récapitulatif et d'une ancre de retour
+        state.giantHTMLRaw += `<!-- wp:html -->\n<div id="summary-top"></div>\n${summaryTableHTML}\n<!-- /wp:html -->\n<!-- wp:html -->\n<div class="match-separator"></div>\n<!-- /wp:html -->\n`;
+
+        // On trie allResults selon le même ordre que allMatches (par division)
+        allResults.sort((a, b) => {
+            const pA = getDivPriority(a.res.category);
+            const pB = getDivPriority(b.res.category);
+            if (pA !== pB) return pB - pA;
+            const numA = parseInt(a.res.teamName.match(/\d+/) || 0);
+            const numB = parseInt(b.res.teamName.match(/\d+/) || 0);
+            return numA - numB;
+        });
+
         allResults.forEach(({ res, detailsData, classData }) => {
             if (detailsData && detailsData.resultat) {
-                const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
-                giantHTML += getMatchDetailsHTML(res, detailsData, false, classData); // Version UI
-                state.giantHTMLRaw += getMatchDetailsHTML(res, detailsData, true, classData); // Version WP (Blocks)
-
-                // Le classement est maintenant géré nativement par getMatchDetailsHTML
+                const detailBlock = getMatchDetailsHTML(res, detailsData, false, classData);
+                giantHTML += detailBlock;
+                state.giantHTMLRaw += getMatchDetailsHTML(res, detailsData, true, classData);
             }
         });
+
+        // Bouton flottant de retour en haut (pour l'UI de preview)
+        giantHTML += `
+            <button onclick="document.getElementById('summary-top').scrollIntoView({behavior:'smooth'})" 
+                    id="floating-back-btn" class="app-floating-back">
+                <i class="fas fa-arrow-up"></i> Retour Récapitulatif
+            </button>
+            <script>
+                window.onscroll = function() {
+                    const btn = document.getElementById('floating-back-btn');
+                    if (btn) {
+                        if (document.body.scrollTop > 500 || document.documentElement.scrollTop > 500) {
+                            btn.style.display = "flex";
+                        } else {
+                            btn.style.display = "none";
+                        }
+                    }
+                };
+            </script>
+        `;
+
+        // Bouton flottant pour WordPress (fixé)
+        state.giantHTMLRaw += `<!-- wp:html -->\n<a href="#summary-top" class="wp-floating-back">↑</a>\n<!-- /wp:html -->`;
 
         elements.exportPanel.innerHTML = giantHTML;
         elements.exportContainer.style.cssText = "display: block; position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: 5000; background: rgba(0,0,0,0.8); overflow-y: auto; padding: 40px 20px;";
@@ -1734,8 +1957,47 @@ function getWordPressCSS() {
     color: #94a3b8 !important;
     text-transform: uppercase !important;
     letter-spacing: 3px !important;
-    margin: 70px auto 25px auto !important;
+    margin: 50px auto 25px auto !important;
     display: block !important;
+}
+
+.ttcav-export-wrapper, .ttcav-export-global {
+    font-size: 18px !important;
+    line-height: 1.6 !important;
+}
+
+.premium-table td {
+    padding: 15px !important;
+    font-size: 18px !important;
+}
+
+.premium-table th {
+    font-size: 16px !important;
+    padding: 15px !important;
+}
+
+.col-header-std-right { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; text-align: right !important; }
+.col-header-std-center { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; text-align: center !important; }
+.col-header-std-left { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; text-align: left !important; }
+.rank-not-available { text-align: center !important; padding: 2rem !important; color: #94a3b8 !important; font-style: italic !important; }
+
+.col-header-large { padding: 1rem !important; font-size: 20px !important; text-align: center !important; }
+.compo-player-box { display: flex !important; justify-content: space-between !important; }
+.compo-total-row { background: #f1f5f9 !important; font-weight: 700 !important; font-size: 16px !important; color: #475569 !important; text-align: center !important; text-transform: uppercase !important; }
+.col-pts-diff { width: 60px !important; text-align: center !important; font-size: 14px !important; }
+
+.back-to-top-wrapper { text-align: center !important; margin: 4rem 0 !important; }
+.back-to-top-btn { 
+    color: #1e293b !important; 
+    text-decoration: none !important; 
+    font-weight: 800 !important; 
+    font-size: 1.25rem !important; 
+    border: 3px solid #e2e8f0 !important; 
+    padding: 12px 35px !important; 
+    border-radius: 50px !important; 
+    background: #f8fafc !important; 
+    display: inline-block !important; 
+    transition: all 0.2s !important;
 }
 
 .premium-table {
@@ -1807,41 +2069,221 @@ function getWordPressCSS() {
 .match-separator { height: 1px !important; background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important; margin: 100px auto !important; max-width: 600px !important; position: relative !important; border: none !important; }
 .match-separator::after { content: "◈" !important; position: absolute !important; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; background: white !important; padding: 0 15px !important; color: #94a3b8 !important; font-size: 18px !important; }
 
+.player-win { font-weight: 800 !important; color: #1e293b !important; }
+.col-header-std { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; }
+.summary-row { cursor: pointer !important; transition: background 0.2s !important; }
+.summary-row:hover { background: #f8fafc !important; }
+.summary-row td { padding: 12px 10px !important; border-bottom: 1px solid #f1f5f9 !important; font-size: 16px !important; }
+.summary-row a { text-decoration: none !important; color: inherit; display: block !important; }
+
+.col-summary-cat { color: #94a3b8 !important; font-size: 14px !important; }
+.col-summary-home { text-align: right !important; }
+.col-summary-score { text-align: center !important; font-weight: 700 !important; background: #f8fafc !important; }
+.col-summary-away { text-align: left !important; }
+.col-summary-status { text-align: center !important; text-transform: uppercase !important; font-size: 14px !important; }
+
+.status-victoire { color: #10b981 !important; font-weight: 400 !important; }
+.status-defaite { color: #ef4444 !important; font-weight: 400 !important; }
+.status-nul { color: #f59e0b !important; font-weight: 400 !important; }
+
+.player-win { font-weight: 800 !important; color: #1e293b !important; }
+.player-loss { font-weight: 400 !important; color: #94a3b8 !important; }
+
+.summary-totals-card { 
+    margin-top: 25px !important; 
+    text-align: center !important; 
+    font-family: 'Outfit', sans-serif !important; 
+    font-weight: 700 !important; 
+    color: #64748b !important; 
+    font-size: 20px !important; 
+    background: #f8fafc !important; 
+    padding: 20px !important; 
+    border-radius: 12px !important; 
+    border: 1px solid #e2e8f0 !important; 
+}
+.total-v { color: #10b981 !important; margin-left: 10px !important; }
+.total-n { color: #eab308 !important; }
+.score-box-small { width: 35px !important; height: 50px !important; font-size: 24px !important; }
+.score-box-large { width: 60px !important; height: 80px !important; font-size: 45px !important; }
+
+.ranking-row-us { background: #f0f9ff !important; font-weight: 800 !important; color: #1e293b !important; }
+.col-rank-num { text-align: center !important; }
+.col-rank-pts { font-weight: 800 !important; }
+.col-rank-std { text-align: center !important; }
+
+.ranking-top-box { 
+    background: white !important; 
+    border: 1px solid #e2e8f0 !important; 
+    border-radius: 12px !important; 
+    padding: 1.5rem !important; 
+    display: flex !important; 
+    justify-content: space-between !important; 
+    align-items: center !important; 
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important; 
+    margin-bottom: 1rem !important; 
+}
+.ranking-box-label { font-size: 0.85rem !important; color: #64748b !important; text-transform: uppercase !important; font-weight: 700 !important; }
+.ranking-box-val { font-size: 1.5rem !important; font-weight: 800 !important; color: #1e293b !important; }
+.ranking-box-item.item-right { text-align: right !important; }
+
+.val-v { color: #10b981 !important; }
+.val-n { color: #64748b !important; }
+.val-d { color: #ef4444 !important; }
+
+.wp-floating-back {
+    position: fixed !important;
+    bottom: 30px !important;
+    right: 30px !important;
+    background: #1e293b !important;
+    color: white !important;
+    width: 60px !important;
+    height: 60px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-decoration: none !important;
+    font-size: 24px !important;
+    font-weight: 800 !important;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3) !important;
+    z-index: 99999 !important;
+    transition: all 0.3s !important;
+}
+
+.app-floating-back {
+    position: fixed !important;
+    bottom: 30px !important;
+    right: 30px !important;
+    background: #1e293b !important;
+    color: white !important;
+    border: none !important;
+    padding: 18px 25px !important;
+    border-radius: 50px !important;
+    cursor: pointer !important;
+    font-size: 1.1rem !important;
+    font-weight: 800 !important;
+    box-shadow: 0 10px 20px -3px rgba(0,0,0,0.4) !important;
+    z-index: 9999 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    transition: transform 0.2s !important;
+}
+
+/* Styles Footer et Résumés */
+.summary-footer {
+    padding: 2.5rem !important;
+    font-size: 1.5rem !important;
+    font-weight: 800 !important;
+    color: #1e293b !important;
+    text-align: center !important;
+    background: #f8fafc !important;
+    border-radius: 12px !important;
+    margin: 3rem 0 2rem 0 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+}
+
+.match-sets-sum {
+    text-align: center !important;
+    background: #f8fafc !important;
+    color: #64748b !important;
+    padding: 20px !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    margin: 30px auto !important;
+    border: 1px dashed #cbd5e1 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+}
+
+.compo-player-box {
+    display: flex !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+}
+
+.compo-total-row td {
+    background: #f1f5f9 !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    color: #475569 !important;
+    text-align: center !important;
+    text-transform: uppercase !important;
+    padding: 10px !important;
+}
+
 @media (max-width: 768px) {
-    .ttcav-export-wrapper { margin: 20px auto !important; padding: 0 10px !important; }
-    .ttcav-wp-main-title { font-size: 2.2rem !important; }
-    .ttcav-wp-vs { margin: 1rem 0 !important; font-size: 1rem !important; }
-    .ttcav-wp-vs::before, .ttcav-wp-vs::after { margin: 0 1rem !important; }
-    .export-subtitle { font-size: 1.1rem !important; margin-bottom: 1.5rem !important; }
-    .premium-scoreboard { 
-        padding: 15px 20px !important; 
-        gap: 8px !important; 
-        margin: 2rem auto !important; 
-        border-radius: 16px !important;
-        transform: scale(0.85) !important;
-        transform-origin: center !important;
-    }
-    .score-digit-box { 
-        box-shadow: 0 2px 0 #cbd5e1 !important; 
-    }
-    .ttcav-wp-ai { padding: 20px !important; margin: 2rem 0 !important; font-size: 0.95rem !important; border-left-width: 4px !important; }
-    .section-title { margin: 4rem 0 1.5rem !important; font-size: 1rem !important; }
-    .premium-table { margin-bottom: 3rem !important; border-radius: 12px !important; }
-    .premium-table th, .premium-table td { font-size: 0.65rem !important; padding: 4px 2px !important; line-height: 1.2 !important; }
-    .premium-table td.col-set, .premium-table th.col-set, .premium-table td.col-score, .premium-table th.col-score { font-size: 0.45rem !important; padding: 4px 0 !important; min-width: 28px !important; width: 28px !important; }
-    .badge-win, .badge-loss { font-size: 0.45rem !important; padding: 2px 4px !important; }
-    .premium-table td.col-player { padding-left: 6px !important; white-space: normal !important; }
-    .match-sets-sum { font-size: 0.85rem !important; margin: -1.5rem 0 3rem !important; }
-    .summary-footer { padding: 1.5rem !important; font-size: 1rem !important; margin: 3rem 0 !important; }
-    .mobile-br { display: block !important; height: 0; }
-    .mobile-only-indent { display: block !important; height: 5px; }
-    .double-sep { font-weight: 800; color: #8b5cf6; display: block; margin: 2px 0; }
+    .section-title { margin: 4rem 0 1.5rem !important; font-size: 1.1rem !important; letter-spacing: 2px !important; }
+    .ttcav-export-wrapper, .ttcav-export-global { font-size: 14px !important; }
+    .premium-table td, .premium-table th { font-size: 12px !important; padding: 8px 5px !important; }
+    .compo-total-row { font-size: 12px !important; }
+    .ranking-box-val { font-size: 1.1rem !important; }
 }
 
 .mobile-br { display: none; }
 .mobile-only-indent { display: none; }
 .double-sep { font-weight: inherit; color: inherit; display: inline; }
 `;
+}
+
+// ===== IA BEAUTIFY NAMES =====
+async function beautifyOpponentNames() {
+    if (!state.groqKey) return;
+    
+    const opponents = [...new Set(state.results.map(r => r.opponent))];
+    const cacheKey = 'ttcav_names_cache_v4';
+    let cache = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+    
+    const toClean = opponents.filter(o => !cache[o]);
+    if (toClean.length === 0) {
+        state.results.forEach(r => { if (cache[r.opponent]) r.opponent = cache[r.opponent]; });
+        return;
+    }
+
+    updateLoaderStep(`Embellissement des noms d'équipes via IA (${toClean.length})...`);
+    
+    const prompt = `Tu es un expert du tennis de table français. 
+    Voici une liste de noms de clubs abrégés (format FFTT). 
+    Pour chaque nom, donne-moi une version ultra-courte et dynamique au format : "Ville (raccourcie) + Sigle".
+    
+    Règles CRITIQUES :
+    - Identifie la ville d'origine de l'adversaire (ex: "MONQUI" -> "Monqui", "FRAT" -> "Oullins").
+    - N'utilise JAMAIS "Villefranche" si l'adversaire n'est pas de Villefranche.
+    - Utilise le sigle du club (ex: "Tennis de Table Club" -> "TTC").
+    - Exemples : 
+      "FRAT.O-PB" -> "Oullins FRAT"
+      "ASUL LYON" -> "Lyon ASUL"
+      "MONQUI PONG" -> "Monqui PONG"
+    
+    Garde le numéro d'équipe à la fin s'il est présent (ex: " 1" ou " 2").
+    Réponds UNIQUEMENT sous forme d'un objet JSON { "nom_abrege": "Ville Sigle" }.
+    
+    Liste : ${toClean.join(', ')}`;
+
+    try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${state.groqKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: state.groqModel,
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.1,
+                response_format: { type: "json_object" }
+            })
+        });
+        const data = await response.json();
+        const cleaned = JSON.parse(data.choices[0].message.content);
+        
+        // Update cache and results
+        Object.assign(cache, cleaned);
+        localStorage.setItem(cacheKey, JSON.stringify(cache));
+        
+        state.results.forEach(r => { if (cache[r.opponent]) r.opponent = cache[r.opponent]; });
+    } catch (e) {
+        console.error("AI Beautify Error:", e);
+    }
 }
 
 function copyWPStylesToClipboard() {
