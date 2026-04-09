@@ -998,20 +998,21 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             const formattedSets = sets.map(s => {
                 if (!s || s === '-') return '-';
                 let val = parseInt(s);
-                if (isNaN(val)) {
-                    if (s.includes('-')) {
-                        const parts = s.split('-');
-                        if (parts.length === 2) {
-                            const p1 = parseInt(parts[0]), p2 = parseInt(parts[1]);
-                            const aWinsVal = p1 > p2;
-                            return (res.isHome ? aWinsVal : !aWinsVal) ? `<strong>${s}</strong>` : s;
-                        }
-                    }
-                    return s;
+                if (isNaN(val)) return s;
+
+                const absVal = Math.abs(val);
+                const winVal = Math.max(11, absVal + 2);
+                let scoreText = "";
+
+                if (val > 0) {
+                    scoreText = `${winVal}-${absVal < 10 ? '0' + absVal : absVal}`;
+                } else {
+                    scoreText = `${absVal < 10 ? '0' + absVal : absVal}-${winVal}`;
                 }
+
                 const aWinsVal = val > 0;
                 const clubWins = res.isHome ? aWinsVal : !aWinsVal;
-                return clubWins ? `<strong>${s}</strong>` : s;
+                return clubWins ? `<strong>${scoreText}</strong>` : scoreText;
             });
 
             partiesHTML += `
@@ -1771,6 +1772,7 @@ function getWordPressCSS() {
 }
 
 .premium-table td.col-player { white-space: nowrap !important; }
+.premium-table td.col-set { font-size: 11px !important; text-align: center !important; color: #64748b !important; min-width: 45px !important; }
 .premium-table tr:nth-child(even) { background-color: #f8fafc !important; }
 
 .match-sets-sum {
@@ -1795,8 +1797,8 @@ function getWordPressCSS() {
     letter-spacing: 1px !important;
 }
 
-.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 6px 12px !important; border-radius: 8px !important; font-weight: 800 !important; }
-.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 6px 12px !important; border-radius: 8px !important; font-weight: 800 !important; }
+.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 4px 10px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 13px !important; }
+.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 4px 10px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 13px !important; }
 
 .pts-pos { color: #10b981 !important; font-weight: 700 !important; }
 .pts-neg { color: #ef4444 !important; font-weight: 700 !important; }
@@ -1826,6 +1828,8 @@ function getWordPressCSS() {
     .section-title { margin: 4rem 0 1.5rem !important; font-size: 1rem !important; }
     .premium-table { margin-bottom: 3rem !important; border-radius: 12px !important; }
     .premium-table th, .premium-table td { font-size: 0.65rem !important; padding: 4px 2px !important; line-height: 1.2 !important; }
+    .premium-table td.col-set, .premium-table th.col-set, .premium-table td.col-score, .premium-table th.col-score { font-size: 0.45rem !important; padding: 4px 0 !important; min-width: 28px !important; width: 28px !important; }
+    .badge-win, .badge-loss { font-size: 0.45rem !important; padding: 2px 4px !important; }
     .premium-table td.col-player { padding-left: 6px !important; white-space: normal !important; }
     .match-sets-sum { font-size: 0.85rem !important; margin: -1.5rem 0 3rem !important; }
     .summary-footer { padding: 1.5rem !important; font-size: 1rem !important; margin: 3rem 0 !important; }
