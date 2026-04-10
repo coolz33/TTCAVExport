@@ -423,15 +423,33 @@ button.secondary:hover {
 }
 
 .loading {
-    text-align: center;
-    padding: 3rem;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.9);
     display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
 }
 
 .loading i {
-    font-size: 3rem;
+    font-size: 4rem;
     color: var(--primary);
-    animation: spin 1s linear infinite;
+    margin-bottom: 1.5rem;
+    filter: drop-shadow(0 0 15px var(--primary-glow));
+}
+
+#loader-text {
+    font-size: 1.25rem;
+    font-weight: 500;
+    color: white;
+    max-width: 400px;
+    line-height: 1.6;
 }
 
 @keyframes spin {
@@ -729,4 +747,228 @@ button.secondary:hover {
     padding-top: 3rem;
     border-top: 1px solid rgba(255,255,255,0.05);
     color: var(--text-muted);
+}
+/* Navigation Tabs */
+.main-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 3rem;
+    animation: fadeInDown 0.8s ease-out;
+}
+
+.tab-btn {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    padding: 0.8rem 2rem;
+    border-radius: 50px;
+    font-size: 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.tab-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    box-shadow: 0 4px 15px rgba(234, 179, 8, 0.3);
+}
+
+.tab-btn:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
+}
+
+.tab-content {
+    animation: fadeInUp 0.5s ease-out;
+}
+
+/* Player List Styling */
+.players-list-container {
+    padding: 0;
+    overflow: hidden;
+    margin-top: 1rem;
+}
+
+.player-item {
+    display: flex;
+    align-items: center;
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--glass-border);
+    transition: all 0.3s ease;
+    cursor: pointer;
+    flex-wrap: wrap;
+}
+
+.player-item:last-child { border-bottom: none; }
+
+.player-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.player-main {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    flex: 2;
+    min-width: 250px;
+}
+
+.player-photo {
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    object-fit: cover;
+    background: #1e293b;
+    border: 2px solid var(--glass-border);
+}
+
+.player-name-box {
+    display: flex;
+    flex-direction: column;
+}
+
+.player-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.player-license {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.player-stats-grid {
+    display: flex;
+    flex: 3;
+    justify-content: space-around;
+    align-items: center;
+    gap: 1rem;
+    min-width: 400px;
+}
+
+.stat-group {
+    text-align: center;
+    min-width: 100px;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+    letter-spacing: 1px;
+}
+
+.stat-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.prog-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 700;
+    font-size: 1rem;
+}
+
+.prog-up { color: var(--win); }
+.prog-down { color: var(--loss); }
+.prog-stable { color: var(--text-muted); }
+
+/* History Section */
+.player-history-box {
+    width: 100%;
+    padding: 2rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px dashed var(--glass-border);
+    display: none;
+    animation: slideDown 0.4s ease-out;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.chart-container {
+    width: 100%;
+    height: 300px;
+    margin: 1.5rem 0;
+    position: relative;
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.history-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.btn-close-history {
+    background: none;
+    box-shadow: none;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+}
+
+.btn-close-history:hover {
+    color: var(--primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Search Box */
+.search-box {
+    position: relative;
+    flex: 1;
+    min-width: 300px;
+}
+
+.search-box i {
+    position: absolute;
+    left: 1.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+}
+
+.search-box input {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--glass-border);
+    padding: 0.85rem 1rem 0.85rem 3rem;
+    border-radius: var(--radius);
+    color: white;
+    font-family: inherit;
+    outline: none;
+    transition: all 0.3s;
+}
+
+.search-box input:focus {
+    border-color: var(--primary);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.player-stats-summary {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+/* Loader for players */
+.players-loader {
+    text-align: center;
+    padding: 4rem;
 }

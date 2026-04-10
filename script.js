@@ -15,7 +15,11 @@ const state = {
     matchDataRegistry: {}, // Pour stocker les données de chaque match (clé = matchID)
     aiSummaries: {},       // Cache local des résumés générés
     giantHTMLRaw: '',     // Version brute de l'export WP avec commentaires
-    currentMatchData: null // Compatibilité ancienne vers.
+    currentMatchData: null, // Compatibilité ancienne vers.
+    players: [],
+    charts: {},
+    activeHistoryLicence: null, // Pour garder le panneau ouvert lors d'un re-render
+    activeHistoryType: 'histo' // 'histo' ou 'matches'
 };
 
 // ===== UI ELEMENTS =====
@@ -36,7 +40,11 @@ const elements = {
     btnCopyAll: document.getElementById('btn-copy-all'),
     helpModal: document.getElementById('help-modal-wrapper'),
     helpContent: document.getElementById('help-content-area'),
-    closeHelp: document.getElementById('close-help-modal')
+    closeHelp: document.getElementById('close-help-modal'),
+    playersList: document.getElementById('players-list'),
+    playerSearch: document.getElementById('player-search'),
+    playerSort: document.getElementById('player-sort'),
+    playerCountBadge: document.getElementById('player-count-badge')
 };
 
 // ===== UTILITAIRES DE DÉMARRAGE =====
@@ -53,6 +61,28 @@ const setupListener = (id, callback) => {
 // ===== INITIALISATION SÉCURISÉE =====
 window.addEventListener('load', () => {
     try {
+        // ===== TABS LOGIC =====
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        tabBtns.forEach(btn => {
+            btn.onclick = () => {
+                const tab = btn.dataset.tab;
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => {
+                    c.style.display = 'none';
+                    c.classList.remove('active');
+                });
+                btn.classList.add('active');
+                const content = document.getElementById(`${tab}-tab`);
+                if (content) {
+                    content.style.display = 'block';
+                    content.classList.add('active');
+                }
+                if (tab === 'players' && state.players.length === 0) {
+                    loadPlayers();
+                }
+            };
+        });
+
         // ===== INIT INPUTS =====
         safeSetVal('input-app-id', state.appId);
         safeSetVal('input-app-key', state.appKey);
@@ -84,6 +114,19 @@ window.addEventListener('load', () => {
 
         setupListener('btn-generate', () => generateResults());
         setupListener('btn-copy-all', () => copyAllMatchesToWordPress());
+        setupListener('btn-refresh-players', () => loadPlayers(true));
+
+        if (elements.playerSearch) {
+            elements.playerSearch.oninput = (e) => {
+                if (typeof renderPlayers === 'function') renderPlayers();
+            };
+        }
+        
+        if (elements.playerSort) {
+            elements.playerSort.onchange = () => {
+                if (typeof renderPlayers === 'function') renderPlayers();
+            };
+        }
 
         const btnCopyCSS = document.getElementById('btn-copy-css');
         if (btnCopyCSS) {
@@ -224,12 +267,18 @@ function updateLoaderStep(text) {
 }
 
 function getVal(v) {
-    return typeof v === 'string' ? v.trim() : '';
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'object') {
+        return Object.keys(v).length === 0 ? '' : String(v);
+    }
+    return String(v).trim();
 }
 
 function cleanTeamName(name) {
     if (!name) return "";
     let n = getVal(name);
+    // Supprimer tout contenu entre parenthèses
+    n = n.replace(/\([^)]*\)/g, '').trim();
     n = n.replace(/PHASE\s*\d+/gi, '').trim();
     return n.split(' ').map(s => {
         if (/^\d+$/.test(s)) return s;
@@ -301,7 +350,7 @@ async function fetchData(action, extraParams = {}, forceRefresh = false, postDat
             logDebug(`Début de la réponse reçue : ${text.substring(0, 300)}`, 'error');
             return { error: 'Erreur format réponse', message: 'La réponse du serveur n\'est pas au format JSON valide.' };
         }
-
+        console.log(`[info] API Response (${action}):`, data);
         if (data.error) {
             const msg = data.message ? `${data.error} : ${data.message}` : data.error;
             // Ne pas logger en erreur si c'est juste un résumé non trouvé (normal au début)
@@ -379,8 +428,11 @@ async function loadTeams(forceRefresh = false) {
                 filteredTeams.forEach(t => {
                     if (!t) return;
                     const idx = state.teams.indexOf(t);
-                    const tRaw = t.libequipe || t.libequ || t.libepr || t.lib || `Équipe ${idx + 1}`;
-                    const tName = cleanTeamName(tRaw);
+                    const tRaw = t.libequipe || t.libequ || t.libepr || t.lib || "";
+                    
+                    // Formatage standardisé : Villefranche (TTCAV) XX
+                    const teamNum = tRaw.match(/\d+/) ? tRaw.match(/\d+/)[0] : (idx + 1);
+                    const tName = `Villefranche (TTCAV) ${teamNum}`;
 
                     if (seen.has(tName)) return;
                     seen.add(tName);
@@ -496,6 +548,12 @@ async function loadMatchdays(team, forceRefresh = false) {
             state.matchdays = playedRounds;
             logDebug(`${playedRounds.length} journées jouées trouvées.`);
 
+            // Option pour TOUTE la phase
+            const allOpt = document.createElement('option');
+            allOpt.value = "all_phase";
+            allOpt.textContent = "--- Toute la phase ---";
+            elements.selectDay.appendChild(allOpt);
+
             const seenRounds = new Set();
             playedRounds.forEach((round, idx) => {
                 let d = (typeof round.dateprevue === 'string' ? round.dateprevue : '') ||
@@ -516,10 +574,10 @@ async function loadMatchdays(team, forceRefresh = false) {
             });
 
             // Sélection par défaut de la dernière journée
-            if (playedRounds.length > 0) {
-                const lastRound = playedRounds[playedRounds.length - 1];
+            if (state.matchdays.length > 0) {
+                const lastRound = state.matchdays[state.matchdays.length - 1];
                 const lastTm = getVal(lastRound.libelle).match(/tour n°\d+/i);
-                const lastKey = lastTm ? lastTm[0].toLowerCase().trim() : `tour n°${playedRounds.length}`;
+                const lastKey = lastTm ? lastTm[0].toLowerCase().trim() : `tour n°${state.matchdays.length}`;
                 elements.selectDay.value = lastKey;
             }
         } else {
@@ -561,7 +619,6 @@ async function generateResults() {
             }
         }
 
-
         const promises = teamsToProcess.map(async (team) => {
             if (!team) return;
             const teamName = team.libequipe || team.libequ || team.libepr || team.lib || "Équipe";
@@ -583,52 +640,32 @@ async function generateResults() {
             if (data && data.tour) {
                 const allMatchesInPoule = Array.isArray(data.tour) ? data.tour : [data.tour];
 
-                const selectedOption = elements.selectDay.options[elements.selectDay.selectedIndex];
-                const refDateStr = selectedOption ? selectedOption.textContent.split(' - ')[1] : null;
-
-                const isWithinRange = (dateStr, refStr) => {
-                    if (!dateStr || !refStr) return false;
-                    try {
-                        const partsA = dateStr.split('/');
-                        const partsB = refStr.split('/');
-                        const valA = new Date(partsA[2], partsA[1] - 1, partsA[0]);
-                        const valB = new Date(partsB[2], partsB[1] - 1, partsB[0]);
-                        const diffDays = Math.abs(valA - valB) / (1000 * 60 * 60 * 24);
-                        return diffDays <= 4; // Tolérance 4 jours pour le week-end
-                    } catch (e) { return false; }
-                };
-
-                const matchFound = allMatchesInPoule.find((r, idx) => {
-                    let dMatch = getVal(r.dateprevue) || getVal(r.datereelle) || '';
-                    
-                    // Si on a une date de référence, on filtre par proximité de date
-                    if (refDateStr && dMatch) {
-                        if (!isWithinRange(dMatch, refDateStr)) return false;
-                    } else {
-                        // Sinon on garde le fallback par libellé
-                        let tExt = `tour n°${idx + 1}`;
+                let matchesToProcess = [];
+                if (selectedDayVal === "all_phase") {
+                    // Collecter uniquement les matchs JOUÉS par NOTRE équipe dans cette poule
+                    const targetNorm = norm(teamName);
+                    matchesToProcess = allMatchesInPoule.filter(r => {
+                        let sA = typeof r.scorea === 'string' ? r.scorea.trim() : '';
+                        let sB = typeof r.scoreb === 'string' ? r.scoreb.trim() : '';
+                        const nA = norm(getVal(r.equa));
+                        const nB = norm(getVal(r.equb));
+                        const hasScore = (sA !== '' || sB !== '');
+                        const isOurTeam = nA.includes(targetNorm) || targetNorm.includes(nA) || 
+                                          nB.includes(targetNorm) || targetNorm.includes(nB) ||
+                                          nA.includes('villefranche') || nB.includes('villefranche');
+                        return hasScore && isOurTeam;
+                    });
+                } else {
+                    // Match spécifique par libellé du tour
+                    const matchFound = allMatchesInPoule.find((r) => {
                         const tm = getVal(r.libelle).match(/tour n°\d+/i);
-                        if (tm) tExt = tm[0].toLowerCase().trim();
-                        if (tExt !== selectedDayVal) return false;
-                    }
+                        const tExt = tm ? tm[0].toLowerCase().trim() : "";
+                        return tExt === selectedDayVal;
+                    });
+                    if (matchFound) matchesToProcess = [matchFound];
+                }
 
-                    let d = getVal(r.dateprevue) || getVal(r.datereelle) || '';
-                    if (d) {
-                        const month = parseInt(d.split('/')[1]);
-                        const isJanJuly = (month >= 1 && month <= 7);
-                        if (isPhase2 && !isJanJuly) return false;
-                        if (!isPhase2 && isJanJuly) return false;
-                    }
-
-                    const eA = getVal(r.equa).toLowerCase();
-                    const eB = getVal(r.equb).toLowerCase();
-                    const currentTeamSearch = teamName.toLowerCase();
-
-                    return eA.includes(currentTeamSearch) || currentTeamSearch.includes(eA) ||
-                        eB.includes(currentTeamSearch) || currentTeamSearch.includes(eB);
-                });
-
-                if (matchFound) {
+                matchesToProcess.forEach(matchFound => {
                     let dMatch = getVal(matchFound.dateprevue) || getVal(matchFound.datereelle) || 'N/A';
                     let lienMatch = getVal(matchFound.lien);
                     let sA = getVal(matchFound.scorea);
@@ -641,23 +678,19 @@ async function generateResults() {
 
                     if (sA === '' && sB === '') return;
 
-                    // Identification simple et infaillible par rapport à l'équipe traitée
                     const nA = norm(getVal(matchFound.equa));
                     const nB = norm(getVal(matchFound.equb));
                     const nTarget = norm(teamName);
 
-                    // On vérifie quel côté contient ou est contenu dans le nom de notre équipe sélectionnée
                     let isHome = nA.includes(nTarget) || nTarget.includes(nA);
                     let isAway = nB.includes(nTarget) || nTarget.includes(nB);
 
-                    // Si on ne trouve pas l'équipe par son nom complet, on tente un nettoyage (gestion FFTT vs Club)
                     if (!isHome && !isAway) {
                         const cleanTarget = nTarget.replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '');
                         isHome = nA.includes(cleanTarget);
                         isAway = nB.includes(cleanTarget);
                     }
 
-                    // Par défaut, si toujours pas trouvé ou si duel interne, on privilégie le côté A si match partiel
                     if (isHome && isAway) {
                         isHome = (nA === nTarget) || (nA.length > nB.length && nA.includes(nTarget));
                     } else if (!isHome && isAway) {
@@ -665,13 +698,12 @@ async function generateResults() {
                     } else if (isHome && !isAway) {
                         isHome = true;
                     } else {
-                        // Ultime secours : on cherche le club dans le nom
                         isHome = nA.includes('villefranche');
                     }
 
                     state.results.push({
-                        teamName: cleanTeamName(teamName),
-                        category: cleanDivisionName(categoryName),
+                        teamName: `Villefranche (TTCAV) ${teamName.match(/\d+/) ? teamName.match(/\d+/)[0] : ""}`.trim(),
+                        category: (selectedDayVal === "all_phase") ? `${getVal(matchFound.libelle)} (${cleanDivisionName(categoryName)})` : cleanDivisionName(categoryName),
                         opponent: cleanTeamName(isHome ? getVal(matchFound.equb) : getVal(matchFound.equa)),
                         score: parseA + ' - ' + parseB,
                         scoreA: parseA,
@@ -682,11 +714,12 @@ async function generateResults() {
                         divisionId: divisionId,
                         pouleId: pouleId
                     });
-                }
+                });
             }
         });
 
         await Promise.all(promises);
+        await beautifyOpponentNames();
         logDebug(`Résultats chargés : ${state.results.length} rencontres.`);
         renderResults();
     } catch (err) {
@@ -2454,3 +2487,622 @@ function showHelpModal() {
     `;
     elements.helpModal.style.display = 'flex';
 }
+
+// ===== JOUEURS INFO =====
+async function loadPlayers(forceRefresh = false) {
+    if (!state.clubId) {
+        showToast('Veuillez configurer votre numéro de club dans les paramètres.', true);
+        logDebug("Loading players aborted: Club ID missing.", 'error');
+        return;
+    }
+    const cacheKey = 'ttcav_players_cache_v1';
+    const cached = localStorage.getItem(cacheKey);
+    let playersLoaded = [];
+
+    if (!forceRefresh && cached) {
+        playersLoaded = JSON.parse(cached);
+        state.players = playersLoaded;
+        renderPlayers();
+        // Les fonctions de sync activeront le loader d'elles-mêmes si nécessaire
+        await syncPlayerHistories(playersLoaded);
+        await syncPlayerVirtualPoints(playersLoaded);
+        return;
+    }
+
+    // Si on arrive ici, c'est qu'on doit TOUT télécharger (ou forceRefresh)
+    setAppBusy(true);
+    updateLoaderStep('Récupération de l\'annuaire des joueurs...');
+    logDebug("Retrieving players list from server...");
+
+    try {
+        const data = await fetchData('getPlayers', { clubId: state.clubId }, forceRefresh);
+        if (data && data.joueur) {
+            let playersArray = Array.isArray(data.joueur) ? data.joueur : [data.joueur];
+            
+            // --- GESTION DE L'HISTORIQUE LOCAL ---
+            const historyKey = 'ttcav_points_history';
+            let pointsHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
+            
+            const today = new Date();
+            // On fige le mois de référence : la Fédé met à jour les points le 11. 
+            // Si on est < au 11, les points actuels sont techniquement encore ceux du mois dernier.
+            let refDate = new Date(today);
+            if (today.getDate() < 11) refDate.setMonth(today.getMonth() - 1);
+            
+            let currentMonthKeys = `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            // Mois précédent exact pour la progression
+            let prevDate = new Date(refDate);
+            prevDate.setMonth(refDate.getMonth() - 1);
+            let prevMonthKeys = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
+            if (!pointsHistory[currentMonthKeys]) pointsHistory[currentMonthKeys] = {};
+            
+            playersArray.forEach(p => {
+                const currentPts = parseFloat(p.points || p.clast || 0); // fallback si points n'existe pas
+                // Assigner la vraie valeur si trouvée
+                if (currentPts > 100) p.points = currentPts; // format FFTT (ex: 1450)
+                else p.points = currentPts * 100; // si jamais l'API renvoie juste '14'
+                
+                pointsHistory[currentMonthKeys][p.licence] = p.points;
+                
+                // Calcul progression mensuelle
+                let prevPts = pointsHistory[prevMonthKeys]?.[p.licence] || p.points;
+                p.prog_mens = Math.round(p.points - prevPts);
+            });
+            
+            localStorage.setItem(historyKey, JSON.stringify(pointsHistory));
+            // -------------------------------------
+
+            playersLoaded = playersArray;
+            state.players = playersArray;
+            state.players.sort((a,b) => (parseFloat(b.points)||0) - (parseFloat(a.points)||0));
+            localStorage.setItem(cacheKey, JSON.stringify(state.players));
+            renderPlayers();
+            logDebug(`${state.players.length} players loaded successfully (History sync ${currentMonthKeys}).`, 'success');
+
+            // Synchronisation chaînée des détails (Historique + Virtuel) sans couper le loader
+            if (playersLoaded.length > 0) {
+                await syncPlayerHistories(playersLoaded);
+                await syncPlayerVirtualPoints(playersLoaded);
+            }
+        } else {
+            logDebug("API returned no valid players data.", "error");
+        }
+    } catch (e) {
+        console.error(e);
+        logDebug("Error loading players: " + e.message, "error");
+    } finally {
+        setAppBusy(false);
+    }
+}
+
+async function syncPlayerVirtualPoints(playersArray) {
+    const today = new Date();
+    const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    let playersToFetch = playersArray.filter(p => !localStorage.getItem(`ttcav_virtuel_${p.licence}_${monthLabel}`));
+    
+    if (playersToFetch.length > 0) {
+        const wasBusy = elements.loader && elements.loader.style.display === 'block';
+        if (!wasBusy) setAppBusy(true);
+        
+        for (let i = 0; i < playersToFetch.length; i++) {
+            const p = playersToFetch[i];
+            updateLoaderStep(`Calcul du classement virtuel... (${i+1}/${playersToFetch.length})<br><span style="color:var(--primary); font-size:1.1rem;">${p.nom} ${p.prenom}</span>`);
+            try {
+                const data = await fetchData('getPlayerMatches', { licence: p.licence });
+                let sum = 0;
+                if (data && data.partie) {
+                    const matches = Array.isArray(data.partie) ? data.partie : [data.partie];
+                    matches.forEach(m => {
+                        sum += parseFloat(getVal(m.pointselo)) || 0;
+                    });
+                }
+                localStorage.setItem(`ttcav_virtuel_${p.licence}_${monthLabel}`, sum.toFixed(2));
+                await new Promise(r => setTimeout(r, 100));
+            } catch (e) { console.error(e); }
+        }
+        setAppBusy(false);
+        renderPlayers();
+    }
+}
+
+async function syncPlayerHistories(playersArray) {
+    const today = new Date();
+    const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    
+    // Identifier les joueurs n'ayant pas leur historique en cache pour ce mois
+    let playersToFetch = playersArray.filter(p => !localStorage.getItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`));
+    
+    if (playersToFetch.length > 0) {
+        const wasBusy = elements.loader && elements.loader.style.display === 'block';
+        if (!wasBusy) setAppBusy(true);
+        
+        for (let i = 0; i < playersToFetch.length; i++) {
+            const p = playersToFetch[i];
+            updateLoaderStep(`Mise en cache des historiques... (${i + 1}/${playersToFetch.length})<br><span style="color:var(--primary); font-size:1.1rem;">${p.nom} ${p.prenom}</span>`);
+            
+            try {
+                const hData = await fetchData('getPlayerHistory', { licence: p.licence });
+                if (hData && hData.histo) {
+                    const hd = Array.isArray(hData.histo) ? hData.histo : [hData.histo]; // Retrait du .reverse()
+                    
+                    // Purger l'ancien cache éventuel pour ce joueur
+                    Object.keys(localStorage).forEach(k => {
+                        if (k.startsWith(`ttcav_histo_v2_${p.licence}`) || k.startsWith(`ttcav_histo_v3_${p.licence}`)) localStorage.removeItem(k);
+                    });
+                    
+                    localStorage.setItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`, JSON.stringify(hd));
+                }
+                // Léger délai pour ne pas brusquer l'API FFTT
+                await new Promise(r => setTimeout(r, 200));
+            } catch (e) {
+                console.error('Erreur chargement histo', e);
+            }
+        }
+        setAppBusy(false);
+    }
+}
+
+window.playerSortCol = window.playerSortCol || 'points';
+window.playerSortOrder = window.playerSortOrder || -1;
+
+window.setPlayerSort = function (col) {
+    if (window.playerSortCol === col) window.playerSortOrder *= -1;
+    else { window.playerSortCol = col; window.playerSortOrder = (col === 'name') ? 1 : -1; }
+    renderPlayers();
+};
+
+window.renderPlayers = function () {
+    if (!elements.playersList) return;
+    
+    // Calcul à la volée des métriques détaillées d'après le cache de l'historique FFTT
+    const today = new Date();
+    const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    
+    state.players.forEach(p => {
+        const histoData = JSON.parse(localStorage.getItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`) || 'null');
+        const virtPts = parseFloat(localStorage.getItem(`ttcav_virtuel_${p.licence}_${monthLabel}`) || '0');
+        p.ph1 = 0; p.ph2 = 0; p.prog_ann = 0;
+        p.virtuel = (parseFloat(p.points)||0) + virtPts;
+        p.prog_virt = virtPts;
+        
+        if (histoData && histoData.length > 0) {
+            let lastPh1 = [...histoData].reverse().find(h => /ph.*(1|I)/i.test(getVal(h.saison)));
+            let lastPh2 = [...histoData].reverse().find(h => /ph.*(2|II)/i.test(getVal(h.saison)));
+            
+            if (lastPh1) p.ph1 = parseInt(getVal(lastPh1.point)) || 0;
+            if (lastPh2) p.ph2 = parseInt(getVal(lastPh2.point)) || 0;
+            
+            if (p.ph1 > 0) p.prog_ann = Math.round((parseInt(p.points)||0) - p.ph1);
+        }
+    });
+
+    const filter = elements.playerSearch ? elements.playerSearch.value : '';
+    const normStr = s => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    let filtered = state.players.filter(p => normStr(`${p.nom} ${p.prenom}`).includes(normStr(filter)) || p.licence.includes(filter));
+    
+    filtered.sort((a, b) => {
+        let valA, valB;
+        if (window.playerSortCol === 'prog') { valA = parseInt(a.prog_mens)||0; valB = parseInt(b.prog_mens)||0; }
+        else if (window.playerSortCol === 'prog_ann') { valA = parseInt(a.prog_ann)||0; valB = parseInt(b.prog_ann)||0; }
+        else if (window.playerSortCol === 'virt') { valA = parseFloat(a.virtuel)||0; valB = parseFloat(b.virtuel)||0; }
+        else if (window.playerSortCol === 'ph1') { valA = parseInt(a.ph1)||0; valB = parseInt(b.ph1)||0; }
+        else if (window.playerSortCol === 'ph2') { valA = parseInt(a.ph2)||0; valB = parseInt(b.ph2)||0; }
+        else if (window.playerSortCol === 'name') { valA = a.nom.toLowerCase(); valB = b.nom.toLowerCase(); }
+        else { valA = parseFloat(a.points)||0; valB = parseFloat(b.points)||0; }
+
+        if (window.playerSortCol === 'name') return valA.localeCompare(valB) * window.playerSortOrder;
+        return (valA - valB) * window.playerSortOrder;
+    });
+
+    elements.playerCountBadge.textContent = `${filtered.length} joueurs`;
+    if (filtered.length === 0) {
+        elements.playersList.innerHTML = `<div style="padding: 2rem; text-align: center; color: #64748b;">Aucun joueur trouvé.</div>`;
+        return;
+    }
+    
+    // Contruction de l'entête de colonnes cliquable avec 6 colonnes
+    let html = `
+        <div class="player-wrapper" style="background: rgba(255,255,255,0.05); margin-bottom: 0.5rem; cursor: pointer; border-bottom: 2px solid var(--primary); padding: 0.5rem 0;">
+            <div class="player-item" style="box-shadow: none; background: transparent; pointer-events: none; margin: 0; padding: 0.5rem 1rem;">
+                <div class="player-main" onclick="setPlayerSort('name')" style="pointer-events: auto; justify-content: flex-start; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; text-transform: uppercase;">
+                    <span style="display:inline-block; margin-right:8px;"><i class="fas fa-sort${window.playerSortCol === 'name' ? (window.playerSortOrder===1?'-alpha-down':'-alpha-up') : ''}" style="opacity: ${window.playerSortCol === 'name' ? '1' : '0.3'}"></i></span> JOUEUR
+                </div>
+                <div class="player-stats-grid" style="pointer-events: auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem;">
+                    <div class="stat-group" onclick="setPlayerSort('points')" style="cursor: pointer;">
+                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'points' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'points' ? '1' : '0.3'}"></i>Points</div>
+                    </div>
+                    <div class="stat-group" onclick="setPlayerSort('virt')" style="cursor: pointer;">
+                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'virt' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'virt' ? '1' : '0.3'}"></i>Virtuel</div>
+                    </div>
+                    <div class="stat-group" onclick="setPlayerSort('ph1')" style="cursor: pointer;">
+                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'ph1' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph1' ? '1' : '0.3'}"></i>Ph. 1</div>
+                    </div>
+                    <div class="stat-group" onclick="setPlayerSort('ph2')" style="cursor: pointer;">
+                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'ph2' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph2' ? '1' : '0.3'}"></i>Ph. 2</div>
+                    </div>
+                    <div class="stat-group" onclick="setPlayerSort('prog')" style="cursor: pointer;">
+                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'prog' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog' ? '1' : '0.3'}"></i>Mois</div>
+                    </div>
+                    <div class="stat-group" onclick="setPlayerSort('prog_ann')" style="cursor: pointer;">
+                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'prog_ann' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog_ann' ? '1' : '0.3'}"></i>Année</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    html += filtered.map(p => {
+        const pts = parseInt(p.points) || 0;
+        const virt = Math.round(p.virtuel);
+        const progVirt = p.prog_virt;
+        const progMens = parseInt(p.prog_mens) || 0;
+        const progAnn = parseInt(p.prog_ann) || 0;
+        const ph1 = parseInt(p.ph1) || '-';
+        const ph2 = parseInt(p.ph2) || '-';
+        
+        // Couleurs par genre : Rose #f472b6 pour les filles, Bleu ciel #38bdf8 pour les garçons
+        const isFemale = (p.sexe === 'F');
+        const ptsStyle = isFemale ? 'style="color: #f472b6;" title="Joueuse"' : 'style="color: #38bdf8;" title="Joueur"';
+        
+        const isOpen = state.activeHistoryLicence === p.licence;
+        
+        return `
+            <div class="player-wrapper">
+                <div class="player-item" onclick="togglePlayerHistory('${p.licence}')">
+                    <div class="player-main">
+                        <img src="https://www.fftt.com/site/joueurs/photos/${p.licence}.jpg" class="player-photo" onerror="this.src='https://ui-avatars.com/api/?name=${p.nom}+${p.prenom}'">
+                        <div class="player-name-box"><span class="player-name">${p.nom} ${p.prenom}</span><span class="player-license">${p.licence}</span></div>
+                    </div>
+                    <div class="player-stats-grid" style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem;">
+                        <div class="stat-group"><div class="stat-label">Points</div><div class="stat-value" ${ptsStyle}>${pts}</div></div>
+                        <div class="stat-group"><div class="stat-label">Virtuel</div><div class="stat-value" style="color:#fbbf24">${virt} <small style="font-size:0.65rem; color:${progVirt>=0?'#4ade80':'#f87171'}">${progVirt>=0?'+':''}${progVirt.toFixed(1)}</small></div></div>
+                        <div class="stat-group"><div class="stat-label">Ph. 1</div><div class="stat-value" style="color:var(--text-muted)">${ph1}</div></div>
+                        <div class="stat-group"><div class="stat-label">Ph. 2</div><div class="stat-value" style="color:var(--text-muted)">${ph2}</div></div>
+                        <div class="stat-group"><div class="stat-label">Mois</div><div class="stat-value ${progMens >= 0 ? 'prog-up' : 'prog-down'}">${progMens}</div></div>
+                        <div class="stat-group"><div class="stat-label">Année</div><div class="stat-value ${progAnn >= 0 ? 'prog-up' : 'prog-down'}">${progAnn}</div></div>
+                    </div>
+                </div>
+                <div class="player-history-box" id="history-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='histo' ? 'block' : 'none'}">
+                    <div class="history-header">
+                        <span class="history-title">Historique des points</span>
+                        <div style="display:flex; gap:10px;">
+                            <button class="btn-close-history" style="background:var(--primary); color:white;" onclick="togglePlayerMatches('${p.licence}')">Matchs</button>
+                            <button class="btn-close-history" onclick="togglePlayerHistory('${p.licence}', true)">Fermer</button>
+                        </div>
+                    </div>
+                    <div class="chart-container"><canvas id="chart-${p.licence}"></canvas></div>
+                </div>
+                <div class="player-history-box" id="matches-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='matches' ? 'block' : 'none'}; padding: 1.5rem;">
+                    <div class="history-header">
+                        <span class="history-title">Dernières Parties</span>
+                        <div style="display:flex; gap:10px;">
+                            <button class="btn-close-history" style="background:var(--primary); color:white;" onclick="togglePlayerHistory('${p.licence}')">Graphique</button>
+                            <button class="btn-close-history" onclick="togglePlayerMatches('${p.licence}', true)">Fermer</button>
+                        </div>
+                    </div>
+                    <div id="match-list-${p.licence}" class="match-list-container" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
+                        <div style="text-align:center; padding: 2rem; opacity:0.5;">Chargement des matchs...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    elements.playersList.innerHTML = html;
+
+    // Restaurer l'historique ou les matchs
+    if (state.activeHistoryLicence) {
+        if (state.activeHistoryType === 'histo') {
+            setTimeout(() => {
+                delete state.charts[state.activeHistoryLicence];
+                loadPlayerHistory(state.activeHistoryLicence);
+            }, 50);
+        } else {
+            setTimeout(() => {
+                loadPlayerMatches(state.activeHistoryLicence);
+            }, 50);
+        }
+    }
+};
+
+window.togglePlayerHistory = async function (licence, forceClose = false) {
+    const box = document.getElementById(`history-${licence}`);
+    if (!box) return;
+
+    if ((state.activeHistoryLicence === licence && state.activeHistoryType === 'histo') || forceClose) {
+        state.activeHistoryLicence = null;
+        renderPlayers();
+        return;
+    }
+
+    state.activeHistoryLicence = licence;
+    state.activeHistoryType = 'histo';
+    renderPlayers();
+};
+
+window.togglePlayerMatches = async function (licence, forceClose = false) {
+    const box = document.getElementById(`matches-${licence}`);
+    if (!box) {
+        // Si on clique depuis l'item principal
+        state.activeHistoryLicence = licence;
+        state.activeHistoryType = 'matches';
+        renderPlayers();
+        return;
+    }
+
+    if ((state.activeHistoryLicence === licence && state.activeHistoryType === 'matches') || forceClose) {
+        state.activeHistoryLicence = null;
+        renderPlayers();
+        return;
+    }
+
+    state.activeHistoryLicence = licence;
+    state.activeHistoryType = 'matches';
+    renderPlayers();
+};
+
+window.loadPlayerMatches = async function (licence) {
+    const container = document.getElementById(`match-list-${licence}`);
+    if (!container) return;
+    
+    try {
+        const data = await fetchData('getPlayerMatches', { licence });
+        const matches = data.matches || data.partie;
+
+        if (!matches || !Array.isArray(matches) || matches.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding:2rem; opacity:0.5;">Aucun match trouvé pour cette phase.</div>';
+            return;
+        }
+        
+        // Log du premier match pour aider l'utilisateur à identifier les clés
+        console.log("Structure d'un match FFTT détectée :", matches[0]);
+
+        const player = state.players.find(pl => pl.licence === licence);
+        const playerPoints = player ? parseFloat(player.points) : 0;
+
+        // Groupement par Date + Épreuve
+        let html = '';
+        let currentGroupKey = '';
+        
+        matches.forEach(m => {
+            const mDate = m.date;
+            const mEpreuve = m.epreuve;
+            const groupKey = `${mDate}_${mEpreuve}`;
+
+            if (groupKey !== currentGroupKey) {
+                currentGroupKey = groupKey;
+                html += `<div style="background: rgba(255,255,255,0.05); padding: 6px 12px; margin: 18px 0 10px 0; border-radius: 4px; font-size: 0.8rem; color: var(--primary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-left: 3px solid var(--primary);">${mDate} - ${mEpreuve}</div>`;
+            }
+            
+            // --- MAPPING SELON DOC SMARTPING 2.0 (xml_partie_mysql.php) ---
+            const mNom = m.advnompre || m.nom || "Inconnu";
+            
+            // Gestion spéciale des Numérotés (N°1, N°150...)
+            let mClastRaw = (m.advclaof || m.clast || m.classement || "").toString().trim();
+            let mClastLabel = mClastRaw;
+            let mClastPoints = 500;
+
+            // Tentative d'extraction intelligente : On cherche un gros nombre (points) et un petit (rang)
+            const numbers = mClastRaw.match(/\d+/g) || [];
+            let foundRank = null;
+            let foundPoints = null;
+
+            numbers.forEach(numStr => {
+                const n = parseInt(numStr);
+                if (n > 0 && n < 1000) foundRank = n;
+                if (n >= 1000) foundPoints = n;
+            });
+
+            const isNumbered = foundRank !== null || mClastRaw.toUpperCase().includes('N');
+            
+            if (isNumbered) {
+                const rank = foundRank || parseFloat(mClastRaw.replace(/\D/g,'')) || "?";
+                const pts = foundPoints || Math.max(2100, 3100 - (parseInt(rank) * 1.0) || 0);
+                mClastLabel = `N°${rank} (${pts} pts)`;
+                mClastPoints = pts;
+            } else {
+                mClastPoints = foundPoints || parseFloat(mClastRaw) || 500;
+                mClastLabel = `${mClastPoints} pts`;
+            }
+
+            const mVicRaw = (m.vd || m.vic || m.victoire || "").toString().toUpperCase();
+            const isVic = mVicRaw.startsWith('V'); 
+            const mCoef = parseFloat(m.coefchamp || m.coef || m.coeff || m.coefficient || 1.0);
+            let mPts = parseFloat(m.pointres || m.pts || m.pointselo);
+            
+            // On cherche AUSSI les sets via scan de clés (fallback si pas dans champ explicite)
+            let playerSets = [];
+            let opponentSets = [];
+            Object.keys(m).forEach(key => {
+                const k = key.toLowerCase();
+                const setMatch = k.match(/(set|score|res)[_a-z]*(\d+)([ab])/i);
+                if (setMatch) {
+                    const idx = parseInt(setMatch[2]) - 1;
+                    if (setMatch[3].toLowerCase() === 'a') playerSets[idx] = m[key];
+                    else opponentSets[idx] = m[key];
+                }
+            });
+
+            // Si l'API ne renvoie pas les points ou qu'ils sont à 0, calcul manuel (Fédération Française de Tennis de Table - Elo)
+            if (isNaN(mPts) || (mPts === 0 && !isVic)) {
+                const diff = mClastPoints - playerPoints;
+                let gain = 0;
+                if (isVic) {
+                    if (diff >= 500) gain = 40;
+                    else if (diff >= 400) gain = 28;
+                    else if (diff >= 300) gain = 22;
+                    else if (diff >= 200) gain = 17;
+                    else if (diff >= 150) gain = 13;
+                    else if (diff >= 100) gain = 10;
+                    else if (diff >= 50) gain = 8;
+                    else if (diff >= 25) gain = 7;
+                    else if (diff >= -24) gain = 6;
+                    else if (diff >= -49) gain = 5;
+                    else if (diff >= -99) gain = 4;
+                    else if (diff >= -149) gain = 3;
+                    else if (diff >= -199) gain = 2;
+                    else if (diff >= -299) gain = 1;
+                    else if (diff >= -399) gain = 0.5;
+                    else gain = 0;
+                } else {
+                    if (diff >= 500) gain = 0;
+                    else if (diff >= 400) gain = -0.5;
+                    else if (diff >= 300) gain = -1;
+                    else if (diff >= 200) gain = -2;
+                    else if (diff >= 150) gain = -3;
+                    else if (diff >= 100) gain = -4;
+                    else if (diff >= 50) gain = -5;
+                    else if (diff >= -24) gain = -6;
+                    else if (diff >= -49) gain = -7;
+                    else if (diff >= -99) gain = -8;
+                    else if (diff >= -149) gain = -10;
+                    else if (diff >= -199) gain = -13;
+                    else if (diff >= -299) gain = -17;
+                    else if (diff >= -399) gain = -22;
+                    else if (diff >= -499) gain = -28;
+                    else gain = -40;
+                }
+                mPts = gain * mCoef;
+            }
+
+            const ptsSign = mPts >= 0 ? '+' : '';
+
+            // Filtrer les sets vides
+            const finalPlayerSets = playerSets.filter(s => s !== undefined && s !== "");
+            const finalOpponentSets = opponentSets.filter(s => s !== undefined && s !== "");
+
+            let setsHtml = '';
+            if (finalPlayerSets.length > 0) {
+                setsHtml = `<div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
+                    <div style="display: flex; gap: 4px;">
+                        ${finalPlayerSets.map(s => `<div style="width: 24px; height: 20px; background: #4ade80; color: #fff; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-weight: 600;">${s}</div>`).join('')}
+                    </div>
+                    <div style="display: flex; gap: 4px;">
+                        ${finalOpponentSets.map(s => `<div style="width: 24px; height: 20px; background: #334155; color: #fff; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-weight: 500;">${s}</div>`).join('')}
+                    </div>
+                </div>`;
+            }
+
+            html += `
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.02); margin-bottom: 2px; border-radius: 4px;">
+                    <div style="display: flex; align-items: center; gap: 15px; flex: 1;">
+                        <div style="width: 42px; height: 38px; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: ${isVic?'rgba(74, 222, 128, 0.1)':'rgba(248, 113, 113, 0.1)'}; color: ${isVic?'#4ade80':'#f87171'}; font-weight: bold; font-size: 0.9rem; border: 1px solid ${isVic?'rgba(74, 222, 128, 0.2)':'rgba(248, 113, 113, 0.2)'};">
+                            ${ptsSign}${mPts.toFixed(1)}
+                        </div>
+                        <div style="display:flex; flex-direction:column;">
+                            <span style="font-weight: 600; font-size: 0.95rem;">${mNom}</span>
+                            <span style="font-size: 0.8rem; opacity: 0.6;">${mClastLabel} • Coef: ${mCoef}</span>
+                        </div>
+                    </div>
+                    ${setsHtml}
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = `<div style="text-align:center; padding:2rem; color:#f87171;">Erreur lors du chargement : ${e.message}</div>`;
+    }
+};
+
+window.loadPlayerHistory = async function (licence) {
+    const canvas = document.getElementById(`chart-${licence}`);
+    if (!canvas || state.charts[licence]) return;
+    
+    const today = new Date();
+    const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const cacheKey = `ttcav_histo_v3_${licence}_${monthLabel}`;
+    const cached = localStorage.getItem(cacheKey);
+    let historyData = null;
+
+    try {
+        if (cached) {
+            historyData = JSON.parse(cached);
+        } else {
+            updateLoaderStep('Chargement de l\'historique...');
+            setAppBusy(true);
+            const data = await fetchData('getPlayerHistory', { licence });
+            if (data && data.histo) {
+                historyData = Array.isArray(data.histo) ? data.histo : [data.histo]; // Retrait du .reverse()
+                localStorage.setItem(cacheKey, JSON.stringify(historyData));
+            }
+        }
+
+        if (historyData) {
+            state.charts[licence] = new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: historyData.map(h => getVal(h.saison).replace('Saison ', '')),
+                    datasets: [{ 
+                        label: 'Points', 
+                        data: historyData.map(h => parseInt(getVal(h.point)) || 0), 
+                        borderColor: '#ef4444', 
+                        backgroundColor: '#ef4444',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#ef4444',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        tension: 0.3 
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#334155',
+                            titleFont: { size: 14, family: 'Outfit' },
+                            bodyFont: { size: 14, weight: 'bold' },
+                            displayColors: false,
+                            callbacks: {
+                                title: (tooltipItems) => {
+                                    const idx = tooltipItems[0].dataIndex;
+                                    const rawLabel = getVal(historyData[idx].saison);
+                                    
+                                    // Détection ultra-robuste de la phase (chiffres, romains, ou simple position)
+                                    let phNum = "";
+                                    if (/(ph|phase).*(1|I)/i.test(rawLabel) || /\(1\)/.test(rawLabel) || /1$/.test(rawLabel)) phNum = "1";
+                                    else if (/(ph|phase).*(2|II)/i.test(rawLabel) || /\(2\)/.test(rawLabel) || /2$/.test(rawLabel)) phNum = "2";
+                                    else phNum = (idx % 2 === 0) ? "1" : "2"; // Guess par alternance si rien n'est trouvé
+
+                                    const yearMatch = rawLabel.match(/20\d\d/g);
+                                    let yearStr = yearMatch ? (yearMatch.length > 1 ? `${yearMatch[0]}/${yearMatch[1]}` : yearMatch[0]) : rawLabel;
+                                    return `Saison ${yearStr} • Phase ${phNum}`;
+                                },
+                                label: (context) => `${context.parsed.y} points`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { 
+                            grid: { color: 'rgba(255,255,255,0.05)', tickColor: 'transparent' },
+                            ticks: {
+                                maxRotation: 0,
+                                autoSkip: false,
+                                callback: function(value, index, values) {
+                                    const label = this.getLabelForValue(value);
+                                    const isPh1 = /ph.*1/i.test(label) || /phase.*1/i.test(label);
+                                    const isPh2 = /ph.*2/i.test(label) || /phase.*2/i.test(label);
+                                    
+                                    // On affiche l'année pour la Phase 1 (ou au moins 1 fois sur 2 si pas de phase détectée)
+                                    if (isPh1 || (!isPh2 && index % 2 === 0)) {
+                                        const yMatch = label.match(/20\d\d/);
+                                        return yMatch ? yMatch[0] : label.substring(0, 4);
+                                    }
+                                    return ""; // Vide pour la Phase 2
+                                }
+                            }
+                        },
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: false }
+                    }
+                }
+            });
+        }
+    } catch (e) {
+        logDebug("Error loading history: " + e.message, "error");
+    } finally {
+        setAppBusy(false);
+    }
+};

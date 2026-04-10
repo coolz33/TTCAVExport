@@ -25,6 +25,7 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -53,11 +54,19 @@
             </div>
         </header>
 
-        <!-- Section Héro -->
-        <div class="hero">
-            <h2>Création rapide des rapports de championnat</h2>
-            <p>Générez des visuels professionnels et exportez-les vers WordPress en un clic.</p>
-        </div>
+        <!-- Barre de Navigation -->
+        <nav class="main-tabs">
+            <button class="tab-btn active" data-tab="reports"><i class="fas fa-file-invoice"></i> Rapports de Matchs</button>
+            <button class="tab-btn" data-tab="players"><i class="fas fa-users"></i> Annuaire des Joueurs</button>
+        </nav>
+
+        <!-- Section Rapports (Contenu existant) -->
+        <div id="reports-tab" class="tab-content active">
+            <!-- Section Héro -->
+            <div class="hero">
+                <h2>Création rapide des rapports de championnat</h2>
+                <p>Générez des visuels professionnels et exportez-les vers WordPress en un clic.</p>
+            </div>
 
         <!-- Barre de Contrôles Principal -->
         <div class="controls-bar glass-panel">
@@ -79,10 +88,10 @@
             </button>
         </div>
 
-        <!-- Indicateur de chargement -->
-        <div class="loading" id="loader">
-            <i class="fas fa-circle-notch"></i>
-            <p id="loader-text" style="margin-top: 1rem">Communication avec les serveurs FFTT...</p>
+        <!-- Indicateur de chargement global pour les rapports -->
+        <div class="loading" id="loader" style="display:none;">
+            <i class="fas fa-circle-notch fa-spin"></i>
+            <p id="loader-text">Communication avec les serveurs FFTT...</p>
         </div>
 
         <!-- Grille de résultats -->
@@ -91,6 +100,35 @@
                 Chargement de l'application...
             </div>
         </div>
+        
+        </div><!-- FIN DE REPORTS-TAB -->
+
+        <!-- Section Joueurs (Nouveau contenu) -->
+        <div id="players-tab" class="tab-content" style="display: none;">
+            <div class="hero">
+                <h2>Les compétiteurs du TTCAV</h2>
+                <p>Consultez les classements, les progressions et l'historique détaillé de chaque joueur.</p>
+            </div>
+
+            <div class="controls-bar glass-panel">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="player-search" placeholder="Rechercher un joueur...">
+                </div>
+                <div class="player-stats-summary" id="player-count-badge">
+                    Chargement des joueurs...
+                </div>
+                <button id="btn-refresh-players" class="secondary">
+                    <i class="fas fa-sync-alt"></i> Actualiser la liste
+                </button>
+            </div>
+
+            <div class="players-list-container glass-panel" id="players-list">
+                <!-- La liste des joueurs sera injectée ici -->
+            </div>
+        </div>
+
+        </div><!-- FIN DE PLAYERS-TAB -->
 
         <!-- Console de Debug -->
         <div id="debug-console"
