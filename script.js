@@ -583,12 +583,34 @@ async function generateResults() {
             if (data && data.tour) {
                 const allMatchesInPoule = Array.isArray(data.tour) ? data.tour : [data.tour];
 
-                const matchFound = allMatchesInPoule.find((r, idx) => {
-                    let tExt = `tour n°${idx + 1}`;
-                    const tm = getVal(r.libelle).match(/tour n°\d+/i);
-                    if (tm) tExt = tm[0].toLowerCase().trim();
+                const selectedOption = elements.selectDay.options[elements.selectDay.selectedIndex];
+                const refDateStr = selectedOption ? selectedOption.textContent.split(' - ')[1] : null;
 
-                    if (tExt !== selectedDayVal) return false;
+                const isWithinRange = (dateStr, refStr) => {
+                    if (!dateStr || !refStr) return false;
+                    try {
+                        const partsA = dateStr.split('/');
+                        const partsB = refStr.split('/');
+                        const valA = new Date(partsA[2], partsA[1] - 1, partsA[0]);
+                        const valB = new Date(partsB[2], partsB[1] - 1, partsB[0]);
+                        const diffDays = Math.abs(valA - valB) / (1000 * 60 * 60 * 24);
+                        return diffDays <= 4; // Tolérance 4 jours pour le week-end
+                    } catch (e) { return false; }
+                };
+
+                const matchFound = allMatchesInPoule.find((r, idx) => {
+                    let dMatch = getVal(r.dateprevue) || getVal(r.datereelle) || '';
+                    
+                    // Si on a une date de référence, on filtre par proximité de date
+                    if (refDateStr && dMatch) {
+                        if (!isWithinRange(dMatch, refDateStr)) return false;
+                    } else {
+                        // Sinon on garde le fallback par libellé
+                        let tExt = `tour n°${idx + 1}`;
+                        const tm = getVal(r.libelle).match(/tour n°\d+/i);
+                        if (tm) tExt = tm[0].toLowerCase().trim();
+                        if (tExt !== selectedDayVal) return false;
+                    }
 
                     let d = getVal(r.dateprevue) || getVal(r.datereelle) || '';
                     if (d) {
@@ -623,18 +645,18 @@ async function generateResults() {
                     const nA = norm(getVal(matchFound.equa));
                     const nB = norm(getVal(matchFound.equb));
                     const nTarget = norm(teamName);
-                    
+
                     // On vérifie quel côté contient ou est contenu dans le nom de notre équipe sélectionnée
                     let isHome = nA.includes(nTarget) || nTarget.includes(nA);
                     let isAway = nB.includes(nTarget) || nTarget.includes(nB);
-                    
+
                     // Si on ne trouve pas l'équipe par son nom complet, on tente un nettoyage (gestion FFTT vs Club)
                     if (!isHome && !isAway) {
                         const cleanTarget = nTarget.replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '');
                         isHome = nA.includes(cleanTarget);
                         isAway = nB.includes(cleanTarget);
                     }
-                    
+
                     // Par défaut, si toujours pas trouvé ou si duel interne, on privilégie le côté A si match partiel
                     if (isHome && isAway) {
                         isHome = (nA === nTarget) || (nA.length > nB.length && nA.includes(nTarget));
@@ -683,7 +705,7 @@ function getDivPriority(cat) {
     if (n.includes('NATIONALE')) return 100;
     if (n.includes('REGIONALE')) {
         const num = parseInt(n.match(/\d+/) || 0);
-        return 90 - num; 
+        return 90 - num;
     }
     if (n.includes('PRE REGIONALE')) return 80;
     if (n.includes('DEPARTEMENTALE')) {
@@ -809,7 +831,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         const summaryLabel = `Bilan ${currentPhaseText}`;
 
         const nameCache = JSON.parse(localStorage.getItem('ttcav_names_cache_v4') || '{}');
-        
+
         // Détection ultra-robuste locale pour contrer les inversions de l'API FFTT entre la liste et le détail
         const clean = (s) => norm(s).replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '').replace(/\s+/g, '');
         const isClubSide = (rawName) => {
@@ -829,14 +851,14 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
         const sideAIsClub = isClubSide(p.equa);
         const sideBIsClub = isClubSide(p.equb);
-        
+
         // On s'assure qu'on ne traite pas les deux comme club (cas extrême)
         let finalSideAIsClub = sideAIsClub;
         let finalSideBIsClub = sideBIsClub;
         if (sideAIsClub && sideBIsClub) {
-             const nTarget = norm(res.teamName);
-             finalSideAIsClub = norm(p.equa).includes(nTarget) || nTarget.includes(norm(p.equa));
-             finalSideBIsClub = !finalSideAIsClub;
+            const nTarget = norm(res.teamName);
+            finalSideAIsClub = norm(p.equa).includes(nTarget) || nTarget.includes(norm(p.equa));
+            finalSideBIsClub = !finalSideAIsClub;
         }
 
         const getStd = (raw, sideIsClub) => {
@@ -847,7 +869,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
         const equipeA = getStd(p.equa || 'Equipe A', finalSideAIsClub);
         const equipeB = getStd(p.equb || 'Equipe B', finalSideBIsClub);
-        
+
         // On définit la référence HOME pour toute la suite de la fonction
         const isActuallyHome = finalSideAIsClub;
 
@@ -1077,7 +1099,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
             const formattedSets = sets.map(s => {
                 if (!s || s === '-') return '-';
-                
+
                 // Si le score est déjà au format "11-8" ou "8-11" (donc contient un tiret qui n'est pas le signe moins)
                 if (typeof s === 'string' && s.includes('-') && s.indexOf('-') > 0) {
                     const parts = s.split('-');
@@ -1085,7 +1107,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                     if (!isNaN(p1) && !isNaN(p2)) {
                         const aWinsSet = p1 > p2;
                         const clubWinsSet = isActuallyHome ? aWinsSet : !aWinsSet;
-                        const scorePadded = `${p1 < 10 ? '0'+p1 : p1}-${p2 < 10 ? '0'+p2 : p2}`;
+                        const scorePadded = `${p1 < 10 ? '0' + p1 : p1}-${p2 < 10 ? '0' + p2 : p2}`;
                         return clubWinsSet ? `<strong>${scorePadded}</strong>` : scorePadded;
                     }
                     return s;
@@ -1357,14 +1379,13 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             const summaryText = state.aiSummaries[matchID] || '<em>Génération du résumé...</em>';
             const wpAI = `<!-- wp:paragraph {"align":"center","className":"ttcav-wp-ai"} -->\n<p id="ai-summary-${matchID}" class="has-text-align-center ttcav-wp-ai">${summaryText}</p>\n<!-- /wp:paragraph -->`;
 
-            // 4. Photo d'équipe (CENTRÉE)
-            const wpTeamImage = (res.photoURL && res.photoURL !== 'URL_DE_VOTRE_IMAGE')
-                ? `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${res.photoURL}" alt="Photo d'équipe"/></figure>\n<!-- /wp:image -->`
-                : '';
+            // 4. Photo d'équipe (Vide par défaut pour insertion WP)
+            const teamURL = (res.photoURL && !res.photoURL.includes('placehold.co') && res.photoURL !== 'URL_DE_VOTRE_IMAGE') ? res.photoURL : '';
+            const wpTeamImage = `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${teamURL}" alt="Photo d'équipe"/></figure>\n<!-- /wp:image -->`;
 
-            // 5. Photo d'action (Toujours incluse pour faciliter le remplacement dans WP)
-            const actionURL = (res.actionPhotoURL && res.actionPhotoURL !== 'URL_IMAGE_ACTION') ? res.actionPhotoURL : 'https://placehold.co/1200x600?text=Photo+Action';
-            const wpActionImage = `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${actionURL}" alt="Photo action du match"/></figure>\n<!-- /wp:image -->`;
+            // 5. Photo d'action (Vide par défaut pour insertion WP)
+
+            const wpActionImage = `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="" alt=""/></figure>\n<!-- /wp:image -->`;
 
             const wpGallery = `<!-- wp:gallery {"linkTo":"none"} -->\n<figure class="wp-block-gallery has-nested-images columns-default is-cropped"></figure>\n<!-- /wp:gallery -->`;
 
@@ -1565,10 +1586,10 @@ function copyWPHTMLToClipboard() {
 // ===== EXPORT GLOBAL (TOUS LES MATCHS) =====
 async function copyAllMatchesToWordPress() {
     if (state.results.length === 0) return showToast('Générez d\'abord les résultats.', true);
-    
+
     setAppBusy(true);
     updateLoaderStep('Préparation de l\'export global...');
-    
+
     // 1. Embellissement des noms des adversaires par IA
     try {
         await beautifyOpponentNames();
@@ -1663,10 +1684,10 @@ async function copyAllMatchesToWordPress() {
             const numB = parseInt(b.teamName.match(/\d+/) || 0);
             return numA - numB;
         });
-        
+
         allMatches.forEach((res, index) => {
             const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
-            
+
             // Standardisation Villefranche TTCAV
             const getStandardName = (raw, isHome) => {
                 const nameCache = JSON.parse(localStorage.getItem('ttcav_names_cache_v4') || '{}');
@@ -1677,29 +1698,29 @@ async function copyAllMatchesToWordPress() {
 
             const teamHome = getStandardName(res.isHome ? res.teamName : res.opponent, res.isHome);
             const teamAway = getStandardName(res.isHome ? res.opponent : res.teamName, !res.isHome);
-            
+
             // Score ordonné (Home - Away)
             const scoreA = res.scoreA;
             const scoreB = res.scoreB;
-            
+
             // Bilan relatif à notre club
             const myScore = res.isHome ? scoreA : scoreB;
             const opScore = res.isHome ? scoreB : scoreA;
-            
+
             let status = 'Nul';
             let color = '#eab308'; // Nul = Jaune
-            if (myScore > opScore) { 
-                status = 'Victoire'; 
+            if (myScore > opScore) {
+                status = 'Victoire';
                 color = '#10b981'; // Vert
                 totals.v++;
-            } else if (myScore < opScore) { 
-                status = 'Défaite'; 
+            } else if (myScore < opScore) {
+                status = 'Défaite';
                 color = '#ef4444'; // Rouge
                 totals.d++;
             } else {
                 totals.n++;
             }
-            
+
             // Nettoyage Division (enlever Poule)
             let cleanCat = (res.category || '').split('– Poule')[0].split('Poule')[0].trim();
 
@@ -1733,7 +1754,7 @@ async function copyAllMatchesToWordPress() {
         `;
 
         giantHTML += summaryTableHTML;
-        
+
         // Ajout du tableau récapitulatif et d'une ancre de retour
         state.giantHTMLRaw += `<!-- wp:html -->\n<div id="summary-top"></div>\n${summaryTableHTML}\n<!-- /wp:html -->\n<!-- wp:html -->\n<div class="match-separator"></div>\n<!-- /wp:html -->\n`;
 
@@ -1775,8 +1796,7 @@ async function copyAllMatchesToWordPress() {
             </script>
         `;
 
-        // Bouton flottant pour WordPress (fixé)
-        state.giantHTMLRaw += `<!-- wp:html -->\n<a href="#summary-top" class="wp-floating-back">↑</a>\n<!-- /wp:html -->`;
+        // On ne met PLUS le bouton flottant dans l'export WP (demandé par l'utilisateur)
 
         elements.exportPanel.innerHTML = giantHTML;
         elements.exportContainer.style.cssText = "display: block; position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: 5000; background: rgba(0,0,0,0.8); overflow-y: auto; padding: 40px 20px;";
@@ -2058,6 +2078,7 @@ function getWordPressCSS() {
     text-transform: uppercase !important;
     letter-spacing: 1px !important;
 }
+[id^="anchor-"], #summary-top { scroll-margin-top: 100px !important; }
 
 .badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 4px 10px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 13px !important; }
 .badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 4px 10px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 13px !important; }
@@ -2073,7 +2094,7 @@ function getWordPressCSS() {
 .col-header-std { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; }
 .summary-row { cursor: pointer !important; transition: background 0.2s !important; }
 .summary-row:hover { background: #f8fafc !important; }
-.summary-row td { padding: 12px 10px !important; border-bottom: 1px solid #f1f5f9 !important; font-size: 16px !important; }
+.summary-row td { padding: 8px 10px !important; border-bottom: 1px solid #f1f5f9 !important; font-size: 14px !important; }
 .summary-row a { text-decoration: none !important; color: inherit; display: block !important; }
 
 .col-summary-cat { color: #94a3b8 !important; font-size: 14px !important; }
@@ -2262,11 +2283,11 @@ function getWordPressCSS() {
 // ===== IA BEAUTIFY NAMES =====
 async function beautifyOpponentNames() {
     if (!state.groqKey) return;
-    
+
     const opponents = [...new Set(state.results.map(r => r.opponent))];
     const cacheKey = 'ttcav_names_cache_v4';
     let cache = JSON.parse(localStorage.getItem(cacheKey) || '{}');
-    
+
     const toClean = opponents.filter(o => !cache[o]);
     if (toClean.length === 0) {
         state.results.forEach(r => { if (cache[r.opponent]) r.opponent = cache[r.opponent]; });
@@ -2274,7 +2295,7 @@ async function beautifyOpponentNames() {
     }
 
     updateLoaderStep(`Embellissement des noms d'équipes via IA (${toClean.length})...`);
-    
+
     const prompt = `Tu es un expert du tennis de table français. 
     Voici une liste de noms de clubs abrégés (format FFTT). 
     Pour chaque nom, donne-moi une version ultra-courte et dynamique au format : "Ville (raccourcie) + Sigle".
@@ -2306,11 +2327,11 @@ async function beautifyOpponentNames() {
         });
         const data = await response.json();
         const cleaned = JSON.parse(data.choices[0].message.content);
-        
+
         // Update cache and results
         Object.assign(cache, cleaned);
         localStorage.setItem(cacheKey, JSON.stringify(cache));
-        
+
         state.results.forEach(r => { if (cache[r.opponent]) r.opponent = cache[r.opponent]; });
     } catch (e) {
         console.error("AI Beautify Error:", e);
