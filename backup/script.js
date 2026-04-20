@@ -15,12 +15,7 @@ const state = {
     matchDataRegistry: {}, // Pour stocker les données de chaque match (clé = matchID)
     aiSummaries: {},       // Cache local des résumés générés
     giantHTMLRaw: '',     // Version brute de l'export WP avec commentaires
-    currentMatchData: null, // Compatibilité ancienne vers.
-    players: [],
-    playerDetailsCache: {}, // Boîte à mémoire pour les points mensuels
-    charts: {},
-    activeHistoryLicence: null, // Pour garder le panneau ouvert lors d'un re-render
-    activeHistoryType: 'histo' // 'histo' ou 'matches'
+    currentMatchData: null // Compatibilité ancienne vers.
 };
 
 // ===== UI ELEMENTS =====
@@ -41,11 +36,7 @@ const elements = {
     btnCopyAll: document.getElementById('btn-copy-all'),
     helpModal: document.getElementById('help-modal-wrapper'),
     helpContent: document.getElementById('help-content-area'),
-    closeHelp: document.getElementById('close-help-modal'),
-    playersList: document.getElementById('players-list'),
-    playerSearch: document.getElementById('player-search'),
-    playerSort: document.getElementById('player-sort'),
-    playerCountBadge: document.getElementById('player-count-badge')
+    closeHelp: document.getElementById('close-help-modal')
 };
 
 // ===== UTILITAIRES DE DÉMARRAGE =====
@@ -62,28 +53,6 @@ const setupListener = (id, callback) => {
 // ===== INITIALISATION SÉCURISÉE =====
 window.addEventListener('load', () => {
     try {
-        // ===== TABS LOGIC =====
-        const tabBtns = document.querySelectorAll('.tab-btn');
-        tabBtns.forEach(btn => {
-            btn.onclick = () => {
-                const tab = btn.dataset.tab;
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => {
-                    c.style.display = 'none';
-                    c.classList.remove('active');
-                });
-                btn.classList.add('active');
-                const content = document.getElementById(`${tab}-tab`);
-                if (content) {
-                    content.style.display = 'block';
-                    content.classList.add('active');
-                }
-                if (tab === 'players' && state.players.length === 0) {
-                    loadPlayers();
-                }
-            };
-        });
-
         // ===== INIT INPUTS =====
         safeSetVal('input-app-id', state.appId);
         safeSetVal('input-app-key', state.appKey);
@@ -115,19 +84,6 @@ window.addEventListener('load', () => {
 
         setupListener('btn-generate', () => generateResults());
         setupListener('btn-copy-all', () => copyAllMatchesToWordPress());
-        setupListener('btn-refresh-players', () => loadPlayers(true));
-
-        if (elements.playerSearch) {
-            elements.playerSearch.oninput = (e) => {
-                if (typeof renderPlayers === 'function') renderPlayers();
-            };
-        }
-        
-        if (elements.playerSort) {
-            elements.playerSort.onchange = () => {
-                if (typeof renderPlayers === 'function') renderPlayers();
-            };
-        }
 
         const btnCopyCSS = document.getElementById('btn-copy-css');
         if (btnCopyCSS) {
@@ -221,60 +177,7 @@ const clearCacheHandler = async () => {
 
 setupListener('btn-do-clear-cache', clearCacheHandler);
 
-/** Normalisation pour comparaisons robustes */
-const norm = s => (s || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
-
 // ===== UTILITAIRES =====
-
-/** Retourne le label du mois FFTT (si < 11, mois précédent) */
-function getCurrentFFTTMonthLabel() {
-    const today = new Date();
-    let refDate = new Date(today);
-    if (today.getDate() < 11) refDate.setMonth(today.getMonth() - 1);
-    return `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function getMonthlyPoints(fullName, licence = null) {
-    const monthLabel = getCurrentFFTTMonthLabel();
-    
-    // 1. D'abord par licence dans le localStorage persistant
-    if (licence) {
-        const cached = localStorage.getItem(`ttcav_mensuel_${licence}_${monthLabel}`);
-        if (cached) return parseFloat(cached);
-        
-        if (state.playerDetailsCache[licence]) return state.playerDetailsCache[licence].points;
-    }
-    
-    // 2. Recherche par NOM (fallback moins précis)
-    if (fullName) {
-        const searchNorm = norm(fullName);
-        
-        // Dans state.players
-        if (state.players) {
-            const p = state.players.find(x => {
-                const combinedNorm = norm(x.nom + (x.prenom || ''));
-                return combinedNorm.includes(searchNorm) || searchNorm.includes(combinedNorm);
-            });
-            if (p) {
-                const cachedP = localStorage.getItem(`ttcav_mensuel_${p.licence}_${monthLabel}`);
-                if (cachedP) return parseFloat(cachedP);
-                return p.points_mensuels || p.points_officiels || p.points;
-            }
-        }
-        
-        // Dans cache session
-        if (state.playerDetailsCache) {
-            const cachedEntry = Object.values(state.playerDetailsCache).find(entry => {
-                const combinedNorm = norm(entry.nom || '');
-                return combinedNorm.includes(searchNorm) || searchNorm.includes(combinedNorm);
-            });
-            if (cachedEntry) return cachedEntry.points;
-        }
-    }
-    
-    return null;
-}
-
 function showToast(msg, isError = false) {
     const t = elements.toast;
     const icon = t.querySelector('i');
@@ -321,19 +224,12 @@ function updateLoaderStep(text) {
 }
 
 function getVal(v) {
-    if (v === null || v === undefined) return '';
-    if (typeof v === 'object') {
-        return Object.keys(v).length === 0 ? '' : String(v);
-    }
-    return String(v).trim();
+    return typeof v === 'string' ? v.trim() : '';
 }
-
 
 function cleanTeamName(name) {
     if (!name) return "";
     let n = getVal(name);
-    // Supprimer tout contenu entre parenthèses
-    n = n.replace(/\([^)]*\)/g, '').trim();
     n = n.replace(/PHASE\s*\d+/gi, '').trim();
     return n.split(' ').map(s => {
         if (/^\d+$/.test(s)) return s;
@@ -342,8 +238,7 @@ function cleanTeamName(name) {
     }).join(' ');
 }
 
-
-
+const norm = s => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").replace(/phase\d/g, "");
 
 function cleanDivisionName(name) {
     if (!name) return "";
@@ -406,7 +301,7 @@ async function fetchData(action, extraParams = {}, forceRefresh = false, postDat
             logDebug(`Début de la réponse reçue : ${text.substring(0, 300)}`, 'error');
             return { error: 'Erreur format réponse', message: 'La réponse du serveur n\'est pas au format JSON valide.' };
         }
-        console.log(`[info] API Response (${action}):`, data);
+
         if (data.error) {
             const msg = data.message ? `${data.error} : ${data.message}` : data.error;
             // Ne pas logger en erreur si c'est juste un résumé non trouvé (normal au début)
@@ -484,11 +379,8 @@ async function loadTeams(forceRefresh = false) {
                 filteredTeams.forEach(t => {
                     if (!t) return;
                     const idx = state.teams.indexOf(t);
-                    const tRaw = t.libequipe || t.libequ || t.libepr || t.lib || "";
-                    
-                    // Formatage standardisé : Villefranche (TTCAV) XX
-                    const teamNum = tRaw.match(/\d+/) ? tRaw.match(/\d+/)[0] : (idx + 1);
-                    const tName = `Villefranche (TTCAV) ${teamNum}`;
+                    const tRaw = t.libequipe || t.libequ || t.libepr || t.lib || `Équipe ${idx + 1}`;
+                    const tName = cleanTeamName(tRaw);
 
                     if (seen.has(tName)) return;
                     seen.add(tName);
@@ -604,12 +496,6 @@ async function loadMatchdays(team, forceRefresh = false) {
             state.matchdays = playedRounds;
             logDebug(`${playedRounds.length} journées jouées trouvées.`);
 
-            // Option pour TOUTE la phase
-            const allOpt = document.createElement('option');
-            allOpt.value = "all_phase";
-            allOpt.textContent = "--- Toute la phase ---";
-            elements.selectDay.appendChild(allOpt);
-
             const seenRounds = new Set();
             playedRounds.forEach((round, idx) => {
                 let d = (typeof round.dateprevue === 'string' ? round.dateprevue : '') ||
@@ -630,10 +516,10 @@ async function loadMatchdays(team, forceRefresh = false) {
             });
 
             // Sélection par défaut de la dernière journée
-            if (state.matchdays.length > 0) {
-                const lastRound = state.matchdays[state.matchdays.length - 1];
+            if (playedRounds.length > 0) {
+                const lastRound = playedRounds[playedRounds.length - 1];
                 const lastTm = getVal(lastRound.libelle).match(/tour n°\d+/i);
-                const lastKey = lastTm ? lastTm[0].toLowerCase().trim() : `tour n°${state.matchdays.length}`;
+                const lastKey = lastTm ? lastTm[0].toLowerCase().trim() : `tour n°${playedRounds.length}`;
                 elements.selectDay.value = lastKey;
             }
         } else {
@@ -675,6 +561,7 @@ async function generateResults() {
             }
         }
 
+
         const promises = teamsToProcess.map(async (team) => {
             if (!team) return;
             const teamName = team.libequipe || team.libequ || team.libepr || team.lib || "Équipe";
@@ -696,39 +583,52 @@ async function generateResults() {
             if (data && data.tour) {
                 const allMatchesInPoule = Array.isArray(data.tour) ? data.tour : [data.tour];
 
-                let matchesToProcess = [];
-                if (selectedDayVal === "all_phase") {
-                    // Collecter uniquement les matchs JOUÉS par NOTRE équipe dans cette poule
-                    const targetNorm = norm(teamName);
-                    matchesToProcess = allMatchesInPoule.filter(r => {
-                        let sA = typeof r.scorea === 'string' ? r.scorea.trim() : '';
-                        let sB = typeof r.scoreb === 'string' ? r.scoreb.trim() : '';
-                        const nA = norm(getVal(r.equa));
-                        const nB = norm(getVal(r.equb));
-                        const hasScore = (sA !== '' || sB !== '');
-                        const isOurTeam = nA.includes(targetNorm) || targetNorm.includes(nA) || 
-                                          nB.includes(targetNorm) || targetNorm.includes(nB) ||
-                                          nA.includes('villefranche') || nB.includes('villefranche');
-                        return hasScore && isOurTeam;
-                    });
-                } else {
-                    // Match spécifique de NOTRE équipe pour cette journée
-                    const targetNorm = norm(teamName);
-                    const matchFound = allMatchesInPoule.find((r) => {
+                const selectedOption = elements.selectDay.options[elements.selectDay.selectedIndex];
+                const refDateStr = selectedOption ? selectedOption.textContent.split(' - ')[1] : null;
+
+                const isWithinRange = (dateStr, refStr) => {
+                    if (!dateStr || !refStr) return false;
+                    try {
+                        const partsA = dateStr.split('/');
+                        const partsB = refStr.split('/');
+                        const valA = new Date(partsA[2], partsA[1] - 1, partsA[0]);
+                        const valB = new Date(partsB[2], partsB[1] - 1, partsB[0]);
+                        const diffDays = Math.abs(valA - valB) / (1000 * 60 * 60 * 24);
+                        return diffDays <= 4; // Tolérance 4 jours pour le week-end
+                    } catch (e) { return false; }
+                };
+
+                const matchFound = allMatchesInPoule.find((r, idx) => {
+                    let dMatch = getVal(r.dateprevue) || getVal(r.datereelle) || '';
+
+                    // Si on a une date de référence, on filtre par proximité de date
+                    if (refDateStr && dMatch) {
+                        if (!isWithinRange(dMatch, refDateStr)) return false;
+                    } else {
+                        // Sinon on garde le fallback par libellé
+                        let tExt = `tour n°${idx + 1}`;
                         const tm = getVal(r.libelle).match(/tour n°\d+/i);
-                        const tExt = tm ? tm[0].toLowerCase().trim() : "";
+                        if (tm) tExt = tm[0].toLowerCase().trim();
                         if (tExt !== selectedDayVal) return false;
+                    }
 
-                        const nA = norm(getVal(r.equa));
-                        const nB = norm(getVal(r.equb));
-                        return nA.includes(targetNorm) || targetNorm.includes(nA) || 
-                               nB.includes(targetNorm) || targetNorm.includes(nB) ||
-                               nA.includes('villefranche') || nB.includes('villefranche');
-                    });
-                    if (matchFound) matchesToProcess = [matchFound];
-                }
+                    let d = getVal(r.dateprevue) || getVal(r.datereelle) || '';
+                    if (d) {
+                        const month = parseInt(d.split('/')[1]);
+                        const isJanJuly = (month >= 1 && month <= 7);
+                        if (isPhase2 && !isJanJuly) return false;
+                        if (!isPhase2 && isJanJuly) return false;
+                    }
 
-                matchesToProcess.forEach(matchFound => {
+                    const eA = getVal(r.equa).toLowerCase();
+                    const eB = getVal(r.equb).toLowerCase();
+                    const currentTeamSearch = teamName.toLowerCase();
+
+                    return eA.includes(currentTeamSearch) || currentTeamSearch.includes(eA) ||
+                        eB.includes(currentTeamSearch) || currentTeamSearch.includes(eB);
+                });
+
+                if (matchFound) {
                     let dMatch = getVal(matchFound.dateprevue) || getVal(matchFound.datereelle) || 'N/A';
                     let lienMatch = getVal(matchFound.lien);
                     let sA = getVal(matchFound.scorea);
@@ -741,19 +641,23 @@ async function generateResults() {
 
                     if (sA === '' && sB === '') return;
 
+                    // Identification simple et infaillible par rapport à l'équipe traitée
                     const nA = norm(getVal(matchFound.equa));
                     const nB = norm(getVal(matchFound.equb));
                     const nTarget = norm(teamName);
 
+                    // On vérifie quel côté contient ou est contenu dans le nom de notre équipe sélectionnée
                     let isHome = nA.includes(nTarget) || nTarget.includes(nA);
                     let isAway = nB.includes(nTarget) || nTarget.includes(nB);
 
+                    // Si on ne trouve pas l'équipe par son nom complet, on tente un nettoyage (gestion FFTT vs Club)
                     if (!isHome && !isAway) {
                         const cleanTarget = nTarget.replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '');
                         isHome = nA.includes(cleanTarget);
                         isAway = nB.includes(cleanTarget);
                     }
 
+                    // Par défaut, si toujours pas trouvé ou si duel interne, on privilégie le côté A si match partiel
                     if (isHome && isAway) {
                         isHome = (nA === nTarget) || (nA.length > nB.length && nA.includes(nTarget));
                     } else if (!isHome && isAway) {
@@ -761,16 +665,13 @@ async function generateResults() {
                     } else if (isHome && !isAway) {
                         isHome = true;
                     } else {
+                        // Ultime secours : on cherche le club dans le nom
                         isHome = nA.includes('villefranche');
-                        isAway = nB.includes('villefranche');
                     }
 
-                    // Sécurité : on ignore si on n'a pas trouvé Villefranche
-                    if (!isHome && !isAway) return;
-
                     state.results.push({
-                        teamName: `Villefranche (TTCAV) ${teamName.match(/\d+/) ? teamName.match(/\d+/)[0] : ""}`.trim(),
-                        category: (selectedDayVal === "all_phase") ? `${getVal(matchFound.libelle)} (${cleanDivisionName(categoryName)})` : cleanDivisionName(categoryName),
+                        teamName: cleanTeamName(teamName),
+                        category: cleanDivisionName(categoryName),
                         opponent: cleanTeamName(isHome ? getVal(matchFound.equb) : getVal(matchFound.equa)),
                         score: parseA + ' - ' + parseB,
                         scoreA: parseA,
@@ -781,12 +682,11 @@ async function generateResults() {
                         divisionId: divisionId,
                         pouleId: pouleId
                     });
-                });
+                }
             }
         });
 
         await Promise.all(promises);
-        await beautifyOpponentNames();
         logDebug(`Résultats chargés : ${state.results.length} rencontres.`);
         renderResults();
     } catch (err) {
@@ -882,37 +782,6 @@ async function showMatchDetails(index) {
         const renc_id = linkParams.get('renc_id') || linkParams.get('res_id') || '';
 
         const data = await fetchData('getMatchDetails', { is_retour, renc_id });
-        
-        // --- NOUVEAU : Récupération des licences et points mensuels (Villefranche + Adversaires) ---
-        try {
-            updateLoaderStep(`Récupération des licences de la rencontre...`);
-            const dataPlayers = await fetchData('getMatchPlayers', { renc_id });
-            if (dataPlayers && dataPlayers.joueur) {
-                const plist = Array.isArray(dataPlayers.joueur) ? dataPlayers.joueur : [dataPlayers.joueur];
-                if (!state.playerDetailsCache) state.playerDetailsCache = {};
-                
-                for (const pj of plist) {
-                    const lic = pj.licence || '';
-                    const nomComplet = (pj.nom || '').trim();
-                    if (lic) {
-                        updateLoaderStep(`Points mensuels : ${nomComplet}...`);
-                        // On force le rafraîchissement (refresh: 1) pour être sûr d'avoir les points mensuels frais
-                        const pDet = await fetchData('getPlayerDetail', { licence: lic }, true);
-                        if (pDet && pDet.joueur) {
-                            const valMensuelle = parseFloat(pDet.joueur.point || 0);
-                            state.playerDetailsCache[lic] = {
-                                points: valMensuelle,
-                                nom: nomComplet
-                            };
-                            logDebug(`Sync Live: ${nomComplet} (${lic}) -> ${valMensuelle}`);
-                        }
-                    }
-                }
-            }
-        } catch (err) {
-            logDebug(`Erreur sync licences: ${err.message}`, 'error');
-        }
-
         let rankingData = null;
         if (res.divisionId && res.pouleId) {
             rankingData = await fetchData('getClassement', { divisionId: res.divisionId, pouleId: res.pouleId });
@@ -965,12 +834,32 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
         // Détection ultra-robuste locale pour contrer les inversions de l'API FFTT entre la liste et le détail
         const clean = (s) => norm(s).replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '').replace(/\s+/g, '');
-        // Détection ultra-robuste du côté Villefranche
-        const isClub = (s) => {
-            if (!s) return false;
-            const ns = norm(s);
-            return ns.includes('villefranche') || ns.includes('ttcav');
+        const isClubSide = (rawName) => {
+            const n = clean(rawName);
+            const nNum = norm(rawName).match(/\d+$/);
+            return state.teams.some(t => {
+                const myRaw = t.libequipe || t.libequ || t.libepr || t.lib || "";
+                const myN = clean(myRaw);
+                const myNum = norm(myRaw).match(/\d+$/);
+                if ((myN.includes(n) || n.includes(myN)) && n.length > 2) {
+                    if (myNum && nNum) return myNum[0] === nNum[0];
+                    return true;
+                }
+                return false;
+            });
         };
+
+        const sideAIsClub = isClubSide(p.equa);
+        const sideBIsClub = isClubSide(p.equb);
+
+        // On s'assure qu'on ne traite pas les deux comme club (cas extrême)
+        let finalSideAIsClub = sideAIsClub;
+        let finalSideBIsClub = sideBIsClub;
+        if (sideAIsClub && sideBIsClub) {
+            const nTarget = norm(res.teamName);
+            finalSideAIsClub = norm(p.equa).includes(nTarget) || nTarget.includes(norm(p.equa));
+            finalSideBIsClub = !finalSideAIsClub;
+        }
 
         const getStd = (raw, sideIsClub) => {
             if (!sideIsClub) return nameCache[raw] || raw;
@@ -978,69 +867,17 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             return `Villefranche TTCAV ${num}`.trim();
         };
 
-        // ***** LOGIQUE DE DÉTECTION ET D'ALIGNEMENT DOMICILE/EXTÉRIEUR *****
-        // On veut que le détail respecte EXACTEMENT le camp (Home/Away) défini dans la liste globale (res.isHome)
-        
-        const isOurClub = (name) => {
-            if (!name) return false;
-            const ns = norm(name);
-            return ns.includes('villefranche') || ns.includes('ttcav');
-        };
+        const equipeA = getStd(p.equa || 'Equipe A', finalSideAIsClub);
+        const equipeB = getStd(p.equb || 'Equipe B', finalSideBIsClub);
 
-        // 1. On identifie la position de Villefranche dans le flux de données DETAIL
-        const detailSideAIsClub = isOurClub(p.equa);
-        const detailSideBIsClub = isOurClub(p.equb);
+        // On définit la référence HOME pour toute la suite de la fonction
+        const isActuallyHome = finalSideAIsClub;
 
-        // 2. On définit qui est equipeA (Gauche) et equipeB (Droite) pour l'affichage
-        // On suit la vérité de la liste (res.isHome)
-        let equipeA, equipeB;
-        let finalTeamScoreA, finalTeamScoreB;
-        let isActuallyHome = res.isHome; // On s'aligne sur la liste globale
-
-        if (res.isHome) {
-            // Villefranche est à DOMICILE dans la liste
-            equipeA = getStd(res.teamName, true);
-            equipeB = nameCache[getVal(res.opponent)] || res.opponent;
-            
-            // On cherche le score de Villefranche dans le détail
-            if (detailSideAIsClub) {
-                finalTeamScoreA = parseInt(p.resa) || res.scoreA;
-                finalTeamScoreB = parseInt(p.resb) || res.scoreB;
-            } else if (detailSideBIsClub) {
-                finalTeamScoreA = parseInt(p.resb) || res.scoreA;
-                finalTeamScoreB = parseInt(p.resa) || res.scoreB;
-            } else {
-                finalTeamScoreA = res.scoreA;
-                finalTeamScoreB = res.scoreB;
-            }
-        } else {
-            // Villefranche est à l'EXTÉRIEUR dans la liste
-            equipeA = nameCache[getVal(res.opponent)] || res.opponent;
-            equipeB = getStd(res.teamName, true);
-
-            // On cherche le score de Villefranche (qui doit être à droite/B)
-            if (detailSideAIsClub) {
-                // Villefranche est en A dans le détail mais on le veut en B (Extérieur)
-                finalTeamScoreB = parseInt(p.resa) || res.scoreB;
-                finalTeamScoreA = parseInt(p.resb) || res.scoreA;
-            } else if (detailSideBIsClub) {
-                finalTeamScoreB = parseInt(p.resb) || res.scoreB;
-                finalTeamScoreA = parseInt(p.resa) || res.scoreA;
-            } else {
-                finalTeamScoreB = res.scoreB;
-                finalTeamScoreA = res.scoreA;
-            }
-        }
-        
-        // Sécurité pour les scores NaN
-        if (isNaN(finalTeamScoreA)) finalTeamScoreA = 0;
-        if (isNaN(finalTeamScoreB)) finalTeamScoreB = 0;
-
-        // On définit finalSideAIsClub/B pour la composition des joueurs plus bas
-        // ===== DÉTECTION DE L'ALIGNEMENT API vs RÉALITÉ =====
-        const apiSideAIsOurClub = isOurClub(p.equa);
-        const apiSideBIsOurClub = isOurClub(p.equb);
-        const shouldSwapAPI = (res.isHome && apiSideBIsOurClub) || (!res.isHome && apiSideAIsOurClub);
+        // Scores : l'API detail renvoie resa/resb, on fallback sur le score de la liste
+        let tmpScoreA = parseInt(p.resa);
+        let tmpScoreB = parseInt(p.resb);
+        let API_SCORE_A = isNaN(tmpScoreA) ? 0 : tmpScoreA;
+        let API_SCORE_B = isNaN(tmpScoreB) ? 0 : tmpScoreB;
 
         // ===== COMPOSITION DES ÉQUIPES =====
         let jouas = [];
@@ -1075,41 +912,18 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         }
 
         joueursArray.forEach(j => {
-            let nA_raw = (j.xja || '').replace(/\s*[MF]\s*$/, '').trim();
-            let nB_raw = (j.xjb || '').replace(/\s*[MF]\s*$/, '').trim();
-            let pA_raw = parseClassement(j.xca || '');
-            let pB_raw = parseClassement(j.xcb || '');
-            
-            const mPtsA_raw = getMonthlyPoints(nA_raw, j.xla || j.licence); 
-            const mPtsB_raw = getMonthlyPoints(nB_raw, j.xlb); 
+            let nA = (j.xja || '').replace(/\s*[MF]\s*$/, '').trim();
+            let nB = (j.xjb || '').replace(/\s*[MF]\s*$/, '').trim();
+            let pA = parseClassement(j.xca || '');
+            let pB = parseClassement(j.xcb || '');
 
-            let isCapA_raw = nA_raw.toLowerCase().includes(' cap') || j.xca === 'cap' || j.capa === '1';
-            let isCapB_raw = nB_raw.toLowerCase().includes(' cap') || j.xcb === 'cap' || j.capb === '1';
-            
-            const pA = { 
-                nom: nA_raw.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim(), 
-                classement: pA_raw.text || '', 
-                mensuel: mPtsA_raw, 
-                rawPoints: pA_raw.raw, 
-                calcPoints: mPtsA_raw || pA_raw.raw, 
-                isCap: isCapA_raw 
-            };
-            const pB = { 
-                nom: nB_raw.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim(), 
-                classement: pB_raw.text || '', 
-                mensuel: mPtsB_raw, 
-                rawPoints: pB_raw.raw, 
-                calcPoints: mPtsB_raw || pB_raw.raw, 
-                isCap: isCapB_raw 
-            };
+            let isCapA = nA.toLowerCase().includes(' cap') || j.xca === 'cap' || j.capa === '1';
+            let isCapB = nB.toLowerCase().includes(' cap') || j.xcb === 'cap' || j.capb === '1';
+            nA = nA.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim();
+            nB = nB.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim();
 
-            if (!shouldSwapAPI) {
-                if (pA.nom) jouas.push(pA);
-                if (pB.nom) joubs.push(pB);
-            } else {
-                if (pB.nom) jouas.push(pB);
-                if (pA.nom) joubs.push(pA);
-            }
+            if (nA) jouas.push({ nom: nA, classement: pA.text || '', rawPoints: pA.raw, isCap: isCapA });
+            if (nB) joubs.push({ nom: nB, classement: pB.text || '', rawPoints: pB.raw, isCap: isCapB });
         });
 
         // Fallback: extraire les joueurs des parties si joueur est vide
@@ -1121,18 +935,12 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 if (m.ja && m.ja.trim() && m.ja !== '-') tempA.add(m.ja.replace(/\s*[MF]\s*$/, '').trim());
                 if (m.jb && m.jb.trim() && m.jb !== '-') tempB.add(m.jb.replace(/\s*[MF]\s*$/, '').trim());
             });
-            jouas = Array.from(tempA).map(nom => {
-                const m = getMonthlyPoints(nom);
-                return { nom, classement: '', mensuel: m, rawPoints: m || 0, calcPoints: m || 0, isCap: false };
-            });
-            joubs = Array.from(tempB).map(nom => {
-                const m = getMonthlyPoints(nom);
-                return { nom, classement: '', mensuel: m, rawPoints: m || 0, calcPoints: m || 0, isCap: false };
-            });
+            jouas = Array.from(tempA).map(nom => ({ nom, classement: '', rawPoints: 0, isCap: false }));
+            joubs = Array.from(tempB).map(nom => ({ nom, classement: '', rawPoints: 0, isCap: false }));
         }
 
-        jouas.forEach(j => { equipeAPoints += j.calcPoints || 0; });
-        joubs.forEach(j => { equipeBPoints += j.calcPoints || 0; });
+        jouas.forEach(j => { equipeAPoints += j.rawPoints || 0; });
+        joubs.forEach(j => { equipeBPoints += j.rawPoints || 0; });
 
         // ===== TABLE DE COMPOSITION =====
         let compoHTML = `
@@ -1145,57 +953,21 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         for (let i = 0; i < Math.max(jouas.length, joubs.length); i++) {
             let htmlA = '';
             if (jouas[i]) {
-                const j = jouas[i];
-                let nomHTML = j.isCap ? `<b>${j.nom}</b>` : j.nom;
-                // On cache la parenthèse si le mensuel est égal à l'officiel
-                const mPtsStr = (j.mensuel && Math.round(j.mensuel) !== Math.round(j.rawPoints)) ? ` (${Math.round(j.mensuel)})` : '';
-                
-                let clastStr = (j.classement || '').trim();
-                const ptsOff = Math.floor(j.rawPoints);
-                
-                clastStr = clastStr.replace(/\s*\(\s*(n°\d+)\s*\).*/i, '$1'); 
-                clastStr = clastStr.replace(/\s*[nN]°\s*(\d+).*/i, 'n°$1');
-                
-                if (clastStr && clastStr.match(/^\d+$/)) {
-                    const numClast = parseInt(clastStr);
-                    if (numClast === ptsOff || numClast > 3000) clastStr = ''; 
-                    else if (numClast > 30) clastStr = 'n°' + clastStr; 
-                }
-                
-                const sep = clastStr ? ' - ' : '';
-                const displayPoints = `${clastStr}${sep}${ptsOff}${mPtsStr}`;
-                htmlA = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPoints}</span></div>`;
+                let nomHTML = jouas[i].isCap ? `<b>${jouas[i].nom}</b>` : jouas[i].nom;
+                htmlA = `<div class="compo-player-box"><span>${nomHTML}</span><span>${jouas[i].classement}</span></div>`;
             }
             let htmlB = '';
             if (joubs[i]) {
-                const j = joubs[i];
-                let nomHTML = j.isCap ? `<b>${j.nom}</b>` : j.nom;
-                // On cache la parenthèse si le mensuel est égal à l'officiel
-                const mPtsStr = (j.mensuel && Math.round(j.mensuel) !== Math.round(j.rawPoints)) ? ` (${Math.round(j.mensuel)})` : '';
-                
-                let clastStr = (j.classement || '').trim();
-                const ptsOff = Math.floor(j.rawPoints);
-
-                clastStr = clastStr.replace(/\s*\(\s*(n°\d+)\s*\).*/i, '$1'); 
-                clastStr = clastStr.replace(/\s*[nN]°\s*(\d+).*/i, 'n°$1');
-
-                if (clastStr && clastStr.match(/^\d+$/)) {
-                    const numClast = parseInt(clastStr);
-                    if (numClast === ptsOff || numClast > 3000) clastStr = '';
-                    else if (numClast > 30) clastStr = 'n°' + clastStr;
-                }
-
-                const sep = clastStr ? ' - ' : '';
-                const displayPoints = `${clastStr}${sep}${ptsOff}${mPtsStr}`;
-                htmlB = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPoints}</span></div>`;
+                let nomHTML = joubs[i].isCap ? `<b>${joubs[i].nom}</b>` : joubs[i].nom;
+                htmlB = `<div class="compo-player-box"><span>${nomHTML}</span><span>${joubs[i].classement}</span></div>`;
             }
             compoHTML += `<tr><td class="col-player">${htmlA}</td><td class="col-player">${htmlB}</td></tr>`;
         }
 
         compoHTML += `
         <tr class="compo-total-row">
-            <td>TOTAL POINTS EQUIPE : ${Math.round(equipeAPoints)}</td>
-            <td>TOTAL POINTS EQUIPE : ${Math.round(equipeBPoints)}</td>
+            <td>TOTAL POINTS EQUIPE : ${equipeAPoints}</td>
+            <td>TOTAL POINTS EQUIPE : ${equipeBPoints}</td>
         </tr>
     </tbody></table>`;
 
@@ -1204,57 +976,19 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
         function getPointsGained(ratingA, ratingB, wonA) {
             if (!ratingA || !ratingB) return 0;
-            const diff = ratingA - ratingB; 
-            const adiff = Math.abs(diff);
-
+            const diff = ratingA - ratingB;
             if (wonA) {
-                if (diff >= 0) {
-                    // VICTOIRE NORMALE (VN)
-                    if (diff >= 500) return 0;
-                    if (diff >= 400) return 0.5;
-                    if (diff >= 300) return 1;
-                    if (diff >= 200) return 2;
-                    if (diff >= 150) return 3;
-                    if (diff >= 100) return 4;
-                    if (diff >= 50)  return 5;
-                    if (diff >= 25)  return 5.5;
-                    return 6;
-                } else {
-                    // VICTOIRE ANORMALE (VA - PERF)
-                    if (adiff >= 500) return 40;
-                    if (adiff >= 400) return 28;
-                    if (adiff >= 300) return 22;
-                    if (adiff >= 200) return 17;
-                    if (adiff >= 150) return 13;
-                    if (adiff >= 100) return 10;
-                    if (adiff >= 50)  return 8;
-                    if (adiff >= 25)  return 7;
-                    return 6;
-                }
+                if (diff >= 500) return 0.5; if (diff >= 400) return 1; if (diff >= 300) return 2;
+                if (diff >= 200) return 3; if (diff >= 100) return 4; if (diff >= 0) return 5;
+                if (diff >= -24) return 6; if (diff >= -49) return 7; if (diff >= -99) return 8;
+                if (diff >= -149) return 10; if (diff >= -199) return 13; if (diff >= -249) return 17;
+                if (diff >= -299) return 22; if (diff >= -399) return 28; return 40;
             } else {
-                if (diff >= 0) {
-                    // DÉFAITE ANORMALE (DA - CONTRE)
-                    if (diff >= 500) return -29;
-                    if (diff >= 400) return -20;
-                    if (diff >= 300) return -16;
-                    if (diff >= 200) return -12.5;
-                    if (diff >= 150) return -10;
-                    if (diff >= 100) return -8;
-                    if (diff >= 50)  return -7;
-                    if (diff >= 25)  return -6;
-                    return -5;
-                } else {
-                    // DÉFAITE NORMALE (DN)
-                    if (adiff >= 500) return 0;
-                    if (adiff >= 400) return 0;
-                    if (adiff >= 300) return -0.5;
-                    if (adiff >= 200) return -1;
-                    if (adiff >= 150) return -2;
-                    if (adiff >= 100) return -3;
-                    if (adiff >= 50)  return -4;
-                    if (adiff >= 25)  return -4.5;
-                    return -5;
-                }
+                if (diff >= 400) return -40; if (diff >= 300) return -28; if (diff >= 250) return -22;
+                if (diff >= 200) return -17; if (diff >= 150) return -13; if (diff >= 100) return -10;
+                if (diff >= 50) return -8; if (diff >= 25) return -7; if (diff >= 0) return -6;
+                if (diff >= -99) return -5; if (diff >= -199) return -4; if (diff >= -299) return -3;
+                if (diff >= -399) return -2; if (diff >= -499) return -1; return -0.5;
             }
         }
 
@@ -1268,10 +1002,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         let partiesHTML = '';
 
         parties.forEach(m => {
-            let nameA_raw = (getVal(m.ja) || '-').replace(/\s+(?:et|&)\s+/gi, ' / ');
-            let nameB_raw = (getVal(m.jb) || '-').replace(/\s+(?:et|&)\s+/gi, ' / ');
-            let jA = !shouldSwapAPI ? nameA_raw : nameB_raw;
-            let jB = !shouldSwapAPI ? nameB_raw : nameA_raw;
+            let jA = (getVal(m.ja) || '-').replace(/\s+(?:et|&)\s+/gi, ' / ');
+            let jB = (getVal(m.jb) || '-').replace(/\s+(?:et|&)\s+/gi, ' / ');
 
             let sets = ['', '', '', '', ''];
             if (m.detail && typeof m.detail === 'string') {
@@ -1284,54 +1016,60 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
             let setsWA = 0, setsWB = 0;
             let hasValidSets = false;
+
+            // NEW SCORING LOGIC ACCUMULATION
             let pointsSummaryA = 0;
             let pointsSummaryB = 0;
 
             sets.forEach(setStr => {
                 if (!setStr) return;
-                let sP1, sP2;
                 if (setStr.includes('-') && setStr.indexOf('-') > 0) {
                     const parts = setStr.split('-');
-                    sP1 = parseInt(parts[0]); sP2 = parseInt(parts[1]);
+                    if (parts.length === 2) {
+                        const p1 = parseInt(parts[0]), p2 = parseInt(parts[1]);
+                        if (!isNaN(p1) && !isNaN(p2)) { if (p1 > p2) setsWA++; else if (p2 > p1) setsWB++; hasValidSets = true; }
+                    }
                 } else {
                     const val = parseInt(setStr);
                     if (isNaN(val)) return;
-                    const absVal = Math.abs(val);
-                    const winVal = Math.max(11, absVal + 2);
-                    if (val >= 0) { sP1 = winVal; sP2 = absVal; } else { sP1 = absVal; sP2 = winVal; }
-                }
 
-                if (!isNaN(sP1) && !isNaN(sP2)) {
-                    const fP1 = !shouldSwapAPI ? sP1 : sP2;
-                    const fP2 = !shouldSwapAPI ? sP2 : sP1;
-                    if (fP1 > fP2) setsWA++; else if (fP2 > fP1) setsWB++;
-                    pointsSummaryA += fP1; pointsSummaryB += fP2;
-                    hasValidSets = true;
+                    if (val > 0) { // Team A wins set (input is Team B's points, e.g. 8 for 11-8)
+                        pointsSummaryA += (val < 10) ? 11 : (val + 2);
+                        pointsSummaryB += val;
+                    } else if (val < 0) { // Team B wins set (input is -8 for 8-11)
+                        const absVal = Math.abs(val);
+                        pointsSummaryA += absVal;
+                        pointsSummaryB += (absVal < 10) ? 11 : (absVal + 2);
+                    }
+
+                    if (val < 0) setsWB++; else setsWA++; hasValidSets = true;
                 }
             });
 
             totalPointsA += pointsSummaryA;
             totalPointsB += pointsSummaryB;
 
-            let sA_base = !shouldSwapAPI ? (parseInt(getVal(m.scorea)) || 0) : (parseInt(getVal(m.scoreb)) || 0);
-            let sB_base = !shouldSwapAPI ? (parseInt(getVal(m.scoreb)) || 0) : (parseInt(getVal(m.scorea)) || 0);
+            let strA = getVal(m.scorea);
+            let strB = getVal(m.scoreb);
+            let sA = parseInt(strA) || 0;
+            let sB = parseInt(strB) || 0;
 
-            let finalSA = hasValidSets ? setsWA : sA_base;
-            let finalSB = hasValidSets ? setsWB : sB_base;
+            let finalSA = hasValidSets ? setsWA : sA;
+            let finalSB = hasValidSets ? setsWB : sB;
 
             totalSetsA += finalSA;
             totalSetsB += finalSB;
 
-            const isWinForClub = res.isHome ? (finalSA > finalSB) : (finalSB > finalSA);
+            const isWinForClub = isActuallyHome ? (finalSA > finalSB) : (finalSB > finalSA);
 
             let rowPoints = 0;
             if (jA && jB && jA !== '-' && jB !== '-' && !jA.toLowerCase().includes('double') && !jB.toLowerCase().includes('double')) {
                 const playerA = jouas.find(p => p.nom === jA);
                 const playerB = joubs.find(p => p.nom === jB);
-                if (playerA && playerB && playerA.calcPoints && playerB.calcPoints) {
-                    let gainA = getPointsGained(playerA.calcPoints, playerB.calcPoints, finalSA > finalSB);
-                    let gainB = getPointsGained(playerB.calcPoints, playerA.calcPoints, finalSB > finalSA);
-                    if (res.isHome) { rowPoints = gainA; if (clubStats[jA]) clubStats[jA].ptsMatch += rowPoints; }
+                if (playerA && playerB && playerA.rawPoints && playerB.rawPoints) {
+                    let gainA = getPointsGained(playerA.rawPoints, playerB.rawPoints, finalSA > finalSB);
+                    let gainB = getPointsGained(playerB.rawPoints, playerA.rawPoints, finalSB > finalSA);
+                    if (isActuallyHome) { rowPoints = gainA; if (clubStats[jA]) clubStats[jA].ptsMatch += rowPoints; }
                     else { rowPoints = gainB; if (clubStats[jB]) clubStats[jB].ptsMatch += rowPoints; }
                 }
             } else if (jA.toLowerCase().includes('double') || jA.includes('/') || jB.includes('/')) {
@@ -1361,30 +1099,36 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
             const formattedSets = sets.map(s => {
                 if (!s || s === '-') return '-';
-                let p1, p2;
+
+                // Si le score est déjà au format "11-8" ou "8-11" (donc contient un tiret qui n'est pas le signe moins)
                 if (typeof s === 'string' && s.includes('-') && s.indexOf('-') > 0) {
                     const parts = s.split('-');
-                    p1 = parseInt(parts[0]); p2 = parseInt(parts[1]);
-                } else {
-                    let val = parseInt(s);
-                    if (isNaN(val)) return '-';
-                    const absVal = Math.abs(val);
-                    const winVal = Math.max(11, absVal + 2);
-                    if (val >= 0) { p1 = winVal; p2 = absVal; } else { p1 = absVal; p2 = winVal; }
+                    let p1 = parseInt(parts[0]), p2 = parseInt(parts[1]);
+                    if (!isNaN(p1) && !isNaN(p2)) {
+                        const aWinsSet = p1 > p2;
+                        const clubWinsSet = isActuallyHome ? aWinsSet : !aWinsSet;
+                        const scorePadded = `${p1 < 10 ? '0' + p1 : p1}-${p2 < 10 ? '0' + p2 : p2}`;
+                        return clubWinsSet ? `<strong>${scorePadded}</strong>` : scorePadded;
+                    }
+                    return s;
                 }
 
-                if (isNaN(p1) || isNaN(p2)) return '-';
+                let val = parseInt(s);
+                if (isNaN(val)) return s;
 
-                // On swap les scores individuels si l'API est inversée
-                const finalP1 = !shouldSwapAPI ? p1 : p2;
-                const finalP2 = !shouldSwapAPI ? p2 : p1;
+                const absVal = Math.abs(val);
+                const winVal = Math.max(11, absVal + 2);
+                let scoreText = "";
 
-                // Notre club gagne le set si finalP1 > finalP2 ET on est Home, 
-                // OU si finalP2 > finalP1 ET on est Away.
-                const clubWinsSet = res.isHome ? (finalP1 > finalP2) : (finalP2 > finalP1);
-                
-                const scoreText = `${finalP1}-${finalP2}`;
-                return clubWinsSet ? `<strong>${scoreText}</strong>` : scoreText;
+                if (val > 0) {
+                    scoreText = `${winVal < 10 ? '0' + winVal : winVal}-${absVal < 10 ? '0' + absVal : absVal}`;
+                } else {
+                    scoreText = `${absVal < 10 ? '0' + absVal : absVal}-${winVal < 10 ? '0' + winVal : winVal}`;
+                }
+
+                const aWinsVal = val > 0;
+                const clubWins = isActuallyHome ? aWinsVal : !aWinsVal;
+                return clubWins ? `<strong>${scoreText}</strong>` : scoreText;
             });
 
             partiesHTML += `
@@ -1398,7 +1142,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 <td class="col-set">${formattedSets[4]}</td>
                 <td class="col-score"><span class="${isWinForClub ? 'badge-win' : 'badge-loss'}">${finalSA}-${finalSB}</span></td>
                 <td class="col-pts-diff">
-                    <span class="pts-gain ${ptsClass}">${diff > 0 ? '+' : ''}${diff !== 0 ? diff.toFixed(1) : ''}</span>
+                    <span class="pts-gain ${ptsClass}">${diff > 0 ? '+' : ''}${diff !== 0 ? diff : ''}</span>
                 </td>
             </tr>
         `;
@@ -1418,8 +1162,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         </table>`;
 
         // ===== STATISTIQUES INDIVIDUELLES =====
-        // On cible les joueurs de Villefranche en fonction de leur position (jouas = Home, joubs = Away)
-        const ourPlayers = res.isHome ? jouas : joubs;
+        // Seulement les joueurs du club (pas les adversaires)
+        const ourPlayers = isActuallyHome ? jouas : joubs;
         const stats = {};
         ourPlayers.forEach(j => {
             if (j.nom) stats[j.nom.trim()] = { v: 0, d: 0 };
@@ -1452,46 +1196,14 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 setsWonB = parseInt(getVal(m.scoreb)) || 0;
             }
 
-            // Compter V/D individuel de façon ultra-robuste avec normalisation
-            const findMatch = (playerName) => {
-                if (!playerName) return null;
-                const nP = norm(playerName);
-                if (!nP) return null;
-                let exact = Object.keys(stats).find(k => norm(k) === nP);
-                if (exact) return exact;
-                return Object.keys(stats).find(k => {
-                    const nK = norm(k);
-                    return nK.includes(nP) || nP.includes(nK);
-                });
-            };
-
-            let matched = null;
-            let isPlayerA = false;
-
-            if (detailSideAIsClub && ja) {
-                matched = findMatch(ja);
-                isPlayerA = true;
-            } 
-            if (!matched && !detailSideAIsClub && jb) {
-                matched = findMatch(jb);
-                isPlayerA = false;
+            // Compter V/D uniquement pour nos joueurs
+            if (isActuallyHome && ja) {
+                let matched = Object.keys(stats).find(k => k === ja || k.includes(ja) || ja.includes(k));
+                if (matched) { if (setsWonA > setsWonB) stats[matched].v++; else stats[matched].d++; }
             }
-            // Fallback ultime : si on n'a rien trouvé du bon côté, on cherche de l'autre côté
-            if (!matched && ja) {
-                matched = findMatch(ja);
-                if (matched) isPlayerA = true;
-            }
-            if (!matched && jb) {
-                matched = findMatch(jb);
-                if (matched) isPlayerA = false;
-            }
-
-            if (matched) {
-                if (isPlayerA) {
-                    if (setsWonA > setsWonB) stats[matched].v++; else stats[matched].d++;
-                } else {
-                    if (setsWonB > setsWonA) stats[matched].v++; else stats[matched].d++;
-                }
+            if (!isActuallyHome && jb) {
+                let matched = Object.keys(stats).find(k => k === jb || k.includes(jb) || jb.includes(k));
+                if (matched) { if (setsWonB > setsWonA) stats[matched].v++; else stats[matched].d++; }
             }
         });
 
@@ -1514,7 +1226,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                     let jb = (getVal(m.jb) || '').toLowerCase().replace(' et ', ' / ');
 
                     if (ja.includes('/') || jb.includes('/') || ja.includes('double') || jb.includes('double')) {
-                        const ourSide = detailSideAIsClub ? ja : jb;
+                        const ourSide = isActuallyHome ? ja : jb;
 
                         // On vérifie si une partie significative du nom est présente
                         const found = searchParts.some(part => ourSide.includes(part));
@@ -1528,7 +1240,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                                 if (sets.length < 2) sets = [m.ms1, m.ms2, m.ms3, m.ms4, m.ms5];
                                 sets.forEach(s => { let v = parseInt(s); if (!isNaN(v)) { if (v > 0) finalSA++; else finalSB++; } });
                             }
-                            const isWin = detailSideAIsClub ? (finalSA > finalSB) : (finalSB > finalSA);
+                            const isWin = isActuallyHome ? (finalSA > finalSB) : (finalSB > finalSA);
                             c.doubleResult = isWin ? 'V' : 'D';
                         }
                     }
@@ -1557,7 +1269,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         statsHTML += '</tbody></table>';
 
         // ===== SCOREBOARD =====
-
+        let finalTeamScoreA = res.scoreA || API_SCORE_A;
+        let finalTeamScoreB = res.scoreB || API_SCORE_B;
 
         let outcomeA = 2, outcomeB = 2;
         if (finalTeamScoreA > finalTeamScoreB) { outcomeA = 3; outcomeB = 1; }
@@ -1676,9 +1389,11 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
 
             const wpGallery = `<!-- wp:gallery {"linkTo":"none"} -->\n<figure class="wp-block-gallery has-nested-images columns-default is-cropped"></figure>\n<!-- /wp:gallery -->`;
 
-            const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>\n<div class="back-to-top-wrapper" style="margin-top: 40px;"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>\n<div class="match-separator"></div>\n</div>\n<!-- /wp:html -->`;
+            const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>\n</div>\n<!-- /wp:html -->`;
 
-            return `${wpTitle}\n${wpHeader}\n${wpAI}\n${wpTeamImage}\n${wpActionImage}\n${wpGallery}\n${wpFooter}`;
+            const wpSeparator = `<!-- wp:html -->\n<div class="back-to-top-wrapper"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>\n<div class="match-separator"></div>\n<!-- /wp:html -->`;
+
+            return `${wpTitle}\n${wpHeader}\n${wpAI}\n${wpTeamImage}\n${wpActionImage}\n${wpGallery}\n${wpFooter}\n${wpSeparator}`;
         }
 
         // Modal/App View mode
@@ -1687,6 +1402,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             : '';
 
         return `
+        <style>${getWordPressCSS()}</style>
         <div class="ttcav-export-wrapper" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 40px; border-bottom: none;">
             <div class="match-detail-block" id="anchor-${matchID}">
                 <div class="export-header" style="text-align:center;">
@@ -2039,8 +1755,8 @@ async function copyAllMatchesToWordPress() {
 
         giantHTML += summaryTableHTML;
 
-        // Ajout du tableau récapitulatif
-        state.giantHTMLRaw += `<!-- wp:html -->\n${summaryTableHTML}\n<div class="match-separator"></div>\n<!-- /wp:html -->\n`;
+        // Ajout du tableau récapitulatif et d'une ancre de retour
+        state.giantHTMLRaw += `<!-- wp:html -->\n<div id="summary-top"></div>\n${summaryTableHTML}\n<!-- /wp:html -->\n<!-- wp:html -->\n<div class="match-separator"></div>\n<!-- /wp:html -->\n`;
 
         // On trie allResults selon le même ordre que allMatches (par division)
         allResults.sort((a, b) => {
@@ -2133,9 +1849,7 @@ async function copyAllMatchesToWordPress() {
 }
 
 function getWordPressCSS() {
-    return `/* --- TTCAV WP STYLES - COPIER DANS PERSONNALISER > CSS ADDITIONNEL --- */
-
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&family=Inter:wght@400;500;600&display=swap');
+    return `@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&family=Inter:wght@400;500;600&display=swap');
 
 /* Utilitaires de Centrage */
 .has-text-align-center {
@@ -2216,13 +1930,13 @@ function getWordPressCSS() {
     display: flex !important;
     justify-content: center !important;
     align-items: center !important;
-    gap: 15px !important;
+    gap: 12px !important;
     background: #1e293b !important;
-    padding: 24px 34px !important;
-    border-radius: 20px !important;
+    padding: 20px 28px !important;
+    border-radius: 16px !important;
     width: fit-content !important;
     margin: 40px auto !important;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2) !important;
+    box-shadow: 0 15px 20px -5px rgba(0, 0, 0, 0.1) !important;
 }
 
 .score-digit-box {
@@ -2230,28 +1944,10 @@ function getWordPressCSS() {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    font-weight: 800 !important;
-    font-family: 'Outfit', sans-serif !important;
-    border-radius: 10px !important;
-    box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important;
-}
-
-.score-box-small {
-    width: 48px !important;
-    height: 60px !important;
-    font-size: 28px !important;
-}
-
-.score-box-large {
-    width: 75px !important;
-    height: 90px !important;
-    font-size: 50px !important;
-}
-
-.score-divider {
-    width: 2px !important;
-    height: 30px !important;
-    background: rgba(255, 255, 255, 0.1) !important;
+    font-weight: 900 !important;
+    font-family: 'Arial Black', Gadget, sans-serif !important;
+    border-radius: 5px !important;
+    box-shadow: 0 3px 0 #cbd5e1 !important;
 }
 
 .digit-red { color: #ef4444 !important; }
@@ -2290,7 +1986,40 @@ function getWordPressCSS() {
     line-height: 1.6 !important;
 }
 
-/* Tables */
+.premium-table td {
+    padding: 15px !important;
+    font-size: 18px !important;
+}
+
+.premium-table th {
+    font-size: 16px !important;
+    padding: 15px !important;
+}
+
+.col-header-std-right { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; text-align: right !important; }
+.col-header-std-center { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; text-align: center !important; }
+.col-header-std-left { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; text-align: left !important; }
+.rank-not-available { text-align: center !important; padding: 2rem !important; color: #94a3b8 !important; font-style: italic !important; }
+
+.col-header-large { padding: 1rem !important; font-size: 20px !important; text-align: center !important; }
+.compo-player-box { display: flex !important; justify-content: space-between !important; }
+.compo-total-row { background: #f1f5f9 !important; font-weight: 700 !important; font-size: 16px !important; color: #475569 !important; text-align: center !important; text-transform: uppercase !important; }
+.col-pts-diff { width: 60px !important; text-align: center !important; font-size: 14px !important; }
+
+.back-to-top-wrapper { text-align: center !important; margin: 4rem 0 !important; }
+.back-to-top-btn { 
+    color: #1e293b !important; 
+    text-decoration: none !important; 
+    font-weight: 800 !important; 
+    font-size: 1.25rem !important; 
+    border: 3px solid #e2e8f0 !important; 
+    padding: 12px 35px !important; 
+    border-radius: 50px !important; 
+    background: #f8fafc !important; 
+    display: inline-block !important; 
+    transition: all 0.2s !important;
+}
+
 .premium-table {
     width: 100% !important;
     border-collapse: separate !important;
@@ -2301,111 +2030,85 @@ function getWordPressCSS() {
     border: 1px solid #e2e8f0 !important;
     background: #ffffff !important;
     display: table !important;
-    table-layout: auto !important;
 }
 
 .premium-table th {
     background: #f8fafc !important;
     color: #64748b !important;
     font-weight: 700 !important;
-    padding: 12px 15px !important;
+    padding: 8px 10px !important;
     text-align: left !important;
-    font-size: 13px !important;
+    font-size: 12px !important;
     text-transform: uppercase !important;
     border-bottom: 1px solid #f1f5f9 !important;
     border-right: 1px solid #f1f5f9 !important;
 }
 
 .premium-table td {
-    padding: 12px 15px !important;
+    padding: 8px 10px !important;
     border-bottom: 1px solid #f1f5f9 !important;
     border-right: 1px solid #f1f5f9 !important;
-    font-size: 15px !important;
+    font-size: 14px !important;
     text-align: left !important;
     color: #1e293b !important;
 }
 
-.premium-table tr:last-child td { border-bottom: none !important; }
-.premium-table th:last-child, .premium-table td:last-child { border-right: none !important; }
+.premium-table td.col-player { white-space: nowrap !important; }
+.premium-table td.col-set { font-size: 11px !important; text-align: center !important; color: #64748b !important; min-width: 45px !important; }
+.premium-table tr:nth-child(even) { background-color: #f8fafc !important; }
 
-/* Spécificités Colonnes */
-.col-header-large { 
-    padding: 1.5rem !important; 
-    font-size: 20px !important; 
-    text-align: center !important; 
-    width: 50% !important;
+.match-sets-sum {
+    text-align: right !important;
+    font-size: 14px !important;
+    color: #94a3b8 !important;
+    margin: -15px 0 50px auto !important;
+    font-weight: 500 !important;
 }
 
-.col-player { 
-    width: 35% !important; 
-    white-space: nowrap !important;
+.summary-footer {
+    text-align: center !important;
+    background: #f8fafc !important;
+    color: #64748b !important;
+    padding: 20px !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    margin: 50px auto !important;
+    border: 1px dashed #cbd5e1 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
 }
-.col-set { width: 8% !important; text-align: center !important; color: #64748b !important; font-size: 12px !important; min-width: 45px !important; }
-.col-score { width: 12% !important; text-align: center !important; }
-.col-pts-diff { width: 8% !important; text-align: center !important; }
+[id^="anchor-"], #summary-top { scroll-margin-top: 100px !important; }
 
-.mobile-br {
-    display: none !important;
-}
-
-/* Status & Badges */
-.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 4px 12px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 14px !important; }
-.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 4px 12px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 14px !important; }
-
-.status-victoire { color: #10b981 !important; font-weight: 700 !important; }
-.status-defaite { color: #ef4444 !important; font-weight: 700 !important; }
-.status-nul { color: #f59e0b !important; font-weight: 700 !important; }
+.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 4px 10px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 13px !important; }
+.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 4px 10px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 13px !important; }
 
 .pts-pos { color: #10b981 !important; font-weight: 700 !important; }
 .pts-neg { color: #ef4444 !important; font-weight: 700 !important; }
 .pts-neu { color: #94a3b8 !important; }
 
+.match-separator { height: 1px !important; background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important; margin: 100px auto !important; max-width: 600px !important; position: relative !important; border: none !important; }
+.match-separator::after { content: "◈" !important; position: absolute !important; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; background: white !important; padding: 0 15px !important; color: #94a3b8 !important; font-size: 18px !important; }
+
 .player-win { font-weight: 800 !important; color: #1e293b !important; }
-.player-loss { font-weight: 400 !important; color: #94a3b8 !important; }
-
-/* Compositions */
-.compo-player-box { display: flex !important; justify-content: space-between !important; width: 100% !important; gap: 10px !important; }
-.compo-total-row td { background: #f1f5f9 !important; font-weight: 700 !important; font-size: 14px !important; color: #475569 !important; text-align: center !important; text-transform: uppercase !important; padding: 15px !important; }
-
-/* Résumés */
-.match-sets-sum {
-    text-align: center !important;
-    background: #f8fafc !important;
-    color: #94a3b8 !important;
-    padding: 20px !important;
-    border-radius: 10px !important;
-    font-weight: 700 !important;
-    font-size: 14px !important;
-    margin: 30px auto !important;
-    border: 1px dashed #cbd5e1 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 1px !important;
-}
-
-.summary-footer {
-    padding: 2.5rem !important;
-    font-size: 1.5rem !important;
-    font-weight: 800 !important;
-    color: #1e293b !important;
-    text-align: center !important;
-    background: #f8fafc !important;
-    border-radius: 12px !important;
-    margin: 3rem 0 2rem 0 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 1px !important;
-}
-
-/* Tableau Récapitulatif */
+.col-header-std { padding: 10px !important; font-size: 14px !important; color: #64748b !important; border-bottom: 1px solid #f1f5f9 !important; }
 .summary-row { cursor: pointer !important; transition: background 0.2s !important; }
 .summary-row:hover { background: #f8fafc !important; }
-.summary-row td { padding: 12px 15px !important; border-bottom: 1px solid #f1f5f9 !important; font-size: 15px !important; }
-.summary-row a { text-decoration: none !important; color: inherit !important; display: block !important; }
+.summary-row td { padding: 8px 10px !important; border-bottom: 1px solid #f1f5f9 !important; font-size: 14px !important; }
+.summary-row a { text-decoration: none !important; color: inherit; display: block !important; }
 
 .col-summary-cat { color: #94a3b8 !important; font-size: 14px !important; }
 .col-summary-home { text-align: right !important; }
 .col-summary-score { text-align: center !important; font-weight: 700 !important; background: #f8fafc !important; }
 .col-summary-away { text-align: left !important; }
 .col-summary-status { text-align: center !important; text-transform: uppercase !important; font-size: 14px !important; }
+
+.status-victoire { color: #10b981 !important; font-weight: 400 !important; }
+.status-defaite { color: #ef4444 !important; font-weight: 400 !important; }
+.status-nul { color: #f59e0b !important; font-weight: 400 !important; }
+
+.player-win { font-weight: 800 !important; color: #1e293b !important; }
+.player-loss { font-weight: 400 !important; color: #94a3b8 !important; }
 
 .summary-totals-card { 
     margin-top: 25px !important; 
@@ -2415,16 +2118,20 @@ function getWordPressCSS() {
     color: #64748b !important; 
     font-size: 20px !important; 
     background: #f8fafc !important; 
-    padding: 2.5rem !important; 
+    padding: 20px !important; 
     border-radius: 12px !important; 
     border: 1px solid #e2e8f0 !important; 
 }
 .total-v { color: #10b981 !important; margin-left: 10px !important; }
 .total-n { color: #eab308 !important; }
-.total-d { color: #ef4444 !important; }
+.score-box-small { width: 35px !important; height: 50px !important; font-size: 24px !important; }
+.score-box-large { width: 60px !important; height: 80px !important; font-size: 45px !important; }
 
-/* Classement */
 .ranking-row-us { background: #f0f9ff !important; font-weight: 800 !important; color: #1e293b !important; }
+.col-rank-num { text-align: center !important; }
+.col-rank-pts { font-weight: 800 !important; }
+.col-rank-std { text-align: center !important; }
+
 .ranking-top-box { 
     background: white !important; 
     border: 1px solid #e2e8f0 !important; 
@@ -2438,42 +2145,138 @@ function getWordPressCSS() {
 }
 .ranking-box-label { font-size: 0.85rem !important; color: #64748b !important; text-transform: uppercase !important; font-weight: 700 !important; }
 .ranking-box-val { font-size: 1.5rem !important; font-weight: 800 !important; color: #1e293b !important; }
+.ranking-box-item.item-right { text-align: right !important; }
 
 .val-v { color: #10b981 !important; }
 .val-n { color: #64748b !important; }
 .val-d { color: #ef4444 !important; }
 
-/* Séparateur de match */
-.match-separator { height: 1px !important; background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important; margin: 100px auto !important; max-width: 600px !important; position: relative !important; border: none !important; }
-.match-separator::after { content: "◈" !important; position: absolute !important; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; background: white !important; padding: 0 15px !important; color: #94a3b8 !important; font-size: 18px !important; }
+.wp-floating-back {
+    position: fixed !important;
+    bottom: 30px !important;
+    right: 30px !important;
+    background: #1e293b !important;
+    color: white !important;
+    width: 60px !important;
+    height: 60px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-decoration: none !important;
+    font-size: 24px !important;
+    font-weight: 800 !important;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3) !important;
+    z-index: 99999 !important;
+    transition: all 0.3s !important;
+}
 
-/* Ancres */
-[id^="anchor-"], #summary-top { scroll-margin-top: 100px !important; }
+.app-floating-back {
+    position: fixed !important;
+    bottom: 30px !important;
+    right: 30px !important;
+    background: #1e293b !important;
+    color: white !important;
+    border: none !important;
+    padding: 18px 25px !important;
+    border-radius: 50px !important;
+    cursor: pointer !important;
+    font-size: 1.1rem !important;
+    font-weight: 800 !important;
+    box-shadow: 0 10px 20px -3px rgba(0,0,0,0.4) !important;
+    z-index: 9999 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    transition: transform 0.2s !important;
+}
 
-/* Bouton Back to Top */
-.back-to-top-wrapper { text-align: center !important; margin: 60px 0 !important; }
-.back-to-top-btn { 
-    color: #1e293b !important; 
-    text-decoration: none !important; 
-    font-weight: 800 !important; 
-    font-size: 1.1rem !important; 
-    border: 2px solid #e2e8f0 !important; 
-    padding: 12px 30px !important; 
-    border-radius: 50px !important; 
-    background: #f8fafc !important; 
-    display: inline-block !important; 
+/* Styles Footer et Résumés */
+.summary-footer {
+    padding: 2.5rem !important;
+    font-size: 1.5rem !important;
+    font-weight: 800 !important;
+    color: #1e293b !important;
+    text-align: center !important;
+    background: #f8fafc !important;
+    border-radius: 12px !important;
+    margin: 3rem 0 2rem 0 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+}
+
+.match-sets-sum {
+    text-align: center !important;
+    background: #f8fafc !important;
+    color: #64748b !important;
+    padding: 20px !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    margin: 30px auto !important;
+    border: 1px dashed #cbd5e1 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+}
+
+.compo-player-box {
+    display: flex !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+}
+
+.compo-total-row td {
+    background: #f1f5f9 !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    color: #475569 !important;
+    text-align: center !important;
+    text-transform: uppercase !important;
+    padding: 10px !important;
 }
 
 @media (max-width: 768px) {
-    .ttcav-wp-main-title { font-size: 32px !important; line-height: 36px !important; }
-    .ttcav-export-wrapper { padding: 0 10px !important; }
-    .premium-table th, .premium-table td { font-size: 11px !important; padding: 8px 5px !important; }
-    .col-header-large { font-size: 16px !important; padding: 1rem !important; }
-    .premium-scoreboard { transform: scale(0.85) !important; margin: 1.5rem auto !important; }
-    .summary-totals-card { font-size: 16px !important; padding: 1.5rem !important; }
-    .col-player { white-space: normal !important; }
-    .mobile-br { display: inline !important; }
+    .section-title { margin: 3rem 0 1rem !important; font-size: 1.1rem !important; letter-spacing: 2px !important; }
+    .ttcav-export-wrapper, .ttcav-export-global { font-size: 14px !important; padding: 0 10px !important; }
+    
+    .premium-table th, .premium-table td { 
+        font-size: 10px !important; 
+        padding: 4px 2px !important; 
+        line-height: 1.2 !important; 
+    }
+    
+    .premium-table td.col-set, .premium-table th.col-set, .premium-table td.col-score, .premium-table th.col-score { 
+        min-width: 28px !important; 
+        width: 28px !important; 
+        padding: 4px 1px !important;
+        font-size: 10px !important;
+    }
+
+    .badge-win, .badge-loss { font-size: 10px !important; padding: 2px 4px !important; }
+    
+    .premium-table td.col-player { 
+        white-space: normal !important; 
+        word-wrap: break-word !important; 
+        max-width: 95px !important; 
+        line-height: 1.1 !important;
+        text-align: left !important;
+    }
+    
+    .premium-scoreboard {
+        transform: scale(0.85) !important;
+        transform-origin: center !important;
+        margin: 1.5rem auto !important;
+    }
+
+    .badge-win, .badge-loss { font-size: 10px !important; padding: 2px 4px !important; }
+    .compo-total-row td { font-size: 10px !important; padding: 5px !important; }
+    .ranking-box-val { font-size: 1rem !important; }
+    .summary-footer { padding: 1.5rem !important; font-size: 1.1rem !important; }
 }
+
+.mobile-br { display: none; }
+.mobile-only-indent { display: none; }
+.double-sep { font-weight: inherit; color: inherit; display: inline; }
 `;
 }
 
@@ -2542,9 +2345,6 @@ function copyWPStylesToClipboard() {
 
 function copyWPHTMLToClipboard() {
     let finalHTML = state.giantHTMLRaw;
-    
-    // Nettoyage : Fusionner les blocs wp:html consécutifs
-    finalHTML = finalHTML.replace(/<!--\s*\/wp:html\s*-->\s*<!--\s*wp:html\s*-->/g, '\n');
 
     // Injecter les résumés IA dans les blocs paragraph de giantHTMLRaw
     Object.keys(state.aiSummaries).forEach(matchID => {
@@ -2609,7 +2409,7 @@ function showHelpModal() {
         <div class="help-section">
             <div class="help-step">
                 <h3><span class="step-num">1</span> Préparation : Copier le Style (CSS)</h3>
-                <p>Pour un rendu identique à cette application, copiez notre feuille de style optimisée.</p>
+                <p>Pour un rendu identique à cette application, copiez la feuille de style optimisée.</p>
                 <div class="help-image-container">
                     <img src="img/app_css_btn.png" alt="Bouton Copier CSS" class="help-image">
                 </div>
@@ -2654,729 +2454,3 @@ function showHelpModal() {
     `;
     elements.helpModal.style.display = 'flex';
 }
-
-// ===== JOUEURS INFO =====
-async function loadPlayers(forceRefresh = false) {
-    if (!state.clubId) {
-        showToast('Veuillez configurer votre numéro de club dans les paramètres.', true);
-        logDebug("Loading players aborted: Club ID missing.", 'error');
-        return;
-    }
-    const cacheKey = 'ttcav_players_cache_v1';
-    const cacheInfoKey = 'ttcav_players_cache_info';
-    const cached = localStorage.getItem(cacheKey);
-    const cachedInfo = JSON.parse(localStorage.getItem(cacheInfoKey) || '{}');
-    let playersLoaded = [];
-
-    const today = new Date();
-    const currentDay = today.getDate();
-    const lastUpdate = cachedInfo.updatedAt ? new Date(cachedInfo.updatedAt) : null;
-    
-    let isStale = false;
-    // Logique demandée : si entre le 10 et le 20 du mois, et cache d'avant le 10 -> Refresh
-    if (lastUpdate) {
-        const tenThisMonth = new Date(today.getFullYear(), today.getMonth(), 10);
-        if (currentDay >= 10 && currentDay <= 20 && lastUpdate < tenThisMonth) {
-            isStale = true;
-            logDebug("Cache obsolète (mise à jour mensuelle de la fédération détectée), rafraîchissement automatique...");
-        }
-    }
-
-    if (forceRefresh) {
-        localStorage.removeItem(cacheKey);
-        localStorage.removeItem(cacheInfoKey);
-    }
-
-    if (!forceRefresh && cached && !isStale) {
-        playersLoaded = JSON.parse(cached);
-        state.players = playersLoaded;
-        renderPlayers();
-        await syncPlayerHistories(playersLoaded);
-
-        // Maintenance silencieuse le mercredi
-        const isWednesday = today.getDay() === 3;
-        const lastSyncDay = cachedInfo.lastSyncDay || '';
-        const todayStr = today.toDateString();
-        const shouldSilentSync = isWednesday && lastSyncDay !== todayStr;
-
-        await syncPlayerMensuelPoints(playersLoaded, false, shouldSilentSync);
-        
-        if (shouldSilentSync) {
-            cachedInfo.lastSyncDay = todayStr;
-            localStorage.setItem(cacheInfoKey, JSON.stringify(cachedInfo));
-            logDebug("Synchronisation de maintenance hebdomadaire effectuée (silencieuse).", "success");
-        }
-        return;
-    }
-
-    // Si on arrive ici, c'est qu'on doit TOUT télécharger (ou forceRefresh)
-    setAppBusy(true);
-    updateLoaderStep('Récupération de l\'annuaire des joueurs...');
-    logDebug("Retrieving players list from server...");
-
-    try {
-        const data = await fetchData('getPlayers', { clubId: state.clubId }, forceRefresh);
-        if (data && data.joueur) {
-            let playersArray = Array.isArray(data.joueur) ? data.joueur : [data.joueur];
-            
-            // Log de détection pour le premier joueur (pour le debug)
-            const pj = playersArray[0];
-            const source = pj.pts ? 'pts' : (pj.point ? 'point' : (pj.points ? 'points' : 'clast'));
-            logDebug(`Détection points (source: ${source}). Exemple: ${pj.nom} -> ${pj[source]}`);
-            
-            // --- GESTION DE L'HISTORIQUE LOCAL ---
-            const historyKey = 'ttcav_points_history';
-            let pointsHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
-            
-            const currentMonthKeys = getCurrentFFTTMonthLabel();
-            
-            // Mois précédent pour la progression
-            const parts = currentMonthKeys.split('-');
-            let prevDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1);
-            prevDate.setMonth(prevDate.getMonth() - 1);
-            let prevMonthKeys = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
-
-            if (!pointsHistory[currentMonthKeys]) pointsHistory[currentMonthKeys] = {};
-            
-            playersArray.forEach(p => {
-                const currentPts = parseFloat(p.pts || p.point || p.points || p.clast || 0); 
-                
-                if (currentPts > 100) p.points = currentPts; 
-                else p.points = currentPts * 100;
-                
-                p.points_officiels = Math.floor(p.points); 
-                
-                // Restaurer depuis le cache mensuel si on l'a déjà, sinon prendre le global
-                const cachedMens = localStorage.getItem(`ttcav_mensuel_${p.licence}_${currentMonthKeys}`);
-                p.points_mensuels = cachedMens ? parseFloat(cachedMens) : currentPts;
-                
-                pointsHistory[currentMonthKeys][p.licence] = p.points;
-                let prevPts = pointsHistory[prevMonthKeys]?.[p.licence] || p.points;
-                p.prog_mens = Math.round(p.points - prevPts);
-            });
-            
-            localStorage.setItem(historyKey, JSON.stringify(pointsHistory));
-
-            playersLoaded = playersArray;
-            state.players = playersArray;
-            state.players.sort((a,b) => (parseFloat(b.points_mensuels || b.points_officiels)||0) - (parseFloat(a.points_mensuels || a.points_officiels)||0));
-            localStorage.setItem(cacheKey, JSON.stringify(state.players));
-            const infoToSave = { 
-                updatedAt: new Date().toISOString(),
-                lastSyncDay: today.toDateString() 
-            };
-            localStorage.setItem('ttcav_players_cache_info', JSON.stringify(infoToSave));
-            renderPlayers();
-            logDebug(`${state.players.length} joueurs chargés (Mensuel OK).`, 'success');
-
-            if (playersLoaded.length > 0) {
-                await syncPlayerHistories(playersLoaded);
-                await syncPlayerMensuelPoints(playersLoaded, forceRefresh, false);
-            }
-        } else {
-            logDebug("API : Aucun joueur trouvé.", "error");
-        }
-    } catch (e) {
-        logDebug("Erreur chargement joueurs: " + e.message, "error");
-    } finally {
-        setAppBusy(false);
-    }
-}
-
-async function syncPlayerMensuelPoints(playersArray, forceRefresh = false, silent = false) {
-    const today = new Date();
-    const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    
-    // Optimisation : On ne fetch que si on n'a pas déjà de décimales (points_mensuels === entier)
-    let playersToFetch = playersArray.filter(p => {
-        if (forceRefresh) return true;
-        const hasDecimals = p.points_mensuels % 1 !== 0;
-        const inLocal = localStorage.getItem(`ttcav_mensuel_${p.licence}_${monthLabel}`);
-        return !inLocal && !hasDecimals;
-    });
-    
-    // Restaurer depuis localStorage pour ceux déjà en cache
-    playersArray.forEach(p => {
-        if (!p.points_mensuels || p.points_mensuels % 1 === 0) {
-            const cached = localStorage.getItem(`ttcav_mensuel_${p.licence}_${monthLabel}`);
-            if (cached) p.points_mensuels = parseFloat(cached);
-        }
-    });
-
-    if (playersToFetch.length > 0) {
-        const wasBusy = elements.loader && elements.loader.style.display === 'block';
-        if (!wasBusy && !silent) setAppBusy(true);
-        
-        for (let i = 0; i < playersToFetch.length; i++) {
-            const p = playersToFetch[i];
-            if (!silent) {
-                updateLoaderStep(`Précision mensuelle... (${i+1}/${playersToFetch.length})<br><span style="color:var(--primary); font-size:1.1rem;">${p.nom} ${p.prenom}</span>`);
-            }
-            try {
-                // Utilisation du bypass cache pour être sûr d'avoir le point live
-                const data = await fetchData('getPlayerDetail', { licence: p.licence }, true);
-                if (data && data.joueur) {
-                    const mPts = parseFloat(data.joueur.point || 0);
-                    if (mPts > 0) {
-                        localStorage.setItem(`ttcav_mensuel_${p.licence}_${monthLabel}`, mPts.toFixed(2));
-                        p.points_mensuels = mPts;
-                    }
-                }
-                await new Promise(r => setTimeout(r, 100));
-            } catch (e) { console.error(e); }
-        }
-        if (!silent) {
-            setAppBusy(false);
-            renderPlayers();
-        } else {
-            // En mode silencieux, on rafraîchit à la fin sans toast
-            console.log(`[Background Sync] Done for ${playersToFetch.length} players.`);
-            renderPlayers();
-        }
-    }
-}
-
-async function syncPlayerHistories(playersArray) {
-    const today = new Date();
-    const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    
-    // Identifier les joueurs n'ayant pas leur historique en cache pour ce mois
-    let playersToFetch = playersArray.filter(p => !localStorage.getItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`));
-    
-    if (playersToFetch.length > 0) {
-        const wasBusy = elements.loader && elements.loader.style.display === 'block';
-        if (!wasBusy) setAppBusy(true);
-        
-        for (let i = 0; i < playersToFetch.length; i++) {
-            const p = playersToFetch[i];
-            updateLoaderStep(`Mise en cache des historiques... (${i + 1}/${playersToFetch.length})<br><span style="color:var(--primary); font-size:1.1rem;">${p.nom} ${p.prenom}</span>`);
-            
-            try {
-                const hData = await fetchData('getPlayerHistory', { licence: p.licence });
-                if (hData && hData.histo) {
-                    const hd = Array.isArray(hData.histo) ? hData.histo : [hData.histo]; // Retrait du .reverse()
-                    
-                    // Purger l'ancien cache éventuel pour ce joueur
-                    Object.keys(localStorage).forEach(k => {
-                        if (k.startsWith(`ttcav_histo_v2_${p.licence}`) || k.startsWith(`ttcav_histo_v3_${p.licence}`)) localStorage.removeItem(k);
-                    });
-                    
-                    localStorage.setItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`, JSON.stringify(hd));
-                }
-                // Léger délai pour ne pas brusquer l'API FFTT
-                await new Promise(r => setTimeout(r, 200));
-            } catch (e) {
-                console.error('Erreur chargement histo', e);
-            }
-        }
-        setAppBusy(false);
-    }
-}
-
-window.playerSortCol = window.playerSortCol || 'points';
-window.playerSortOrder = window.playerSortOrder || -1;
-
-window.setPlayerSort = function (col) {
-    if (window.playerSortCol === col) window.playerSortOrder *= -1;
-    else { window.playerSortCol = col; window.playerSortOrder = (col === 'name') ? 1 : -1; }
-    renderPlayers();
-};
-
-window.refreshSinglePlayerPoints = async function(licence) {
-    if (!licence) return;
-    const btn = event.currentTarget;
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    }
-    
-    try {
-        const data = await fetchData('getPlayerDetail', { licence }, true);
-        if (data && data.joueur) {
-            const mPts = parseFloat(data.joueur.point || 0);
-            const p = state.players.find(x => x.licence === licence);
-            if (p) {
-                p.points_mensuels = mPts;
-                // Sauvegarde persistance mensuelle
-                const mKey = getCurrentFFTTMonthLabel();
-                localStorage.setItem(`ttcav_mensuel_${licence}_${mKey}`, mPts.toString());
-
-                // MISE À JOUR DU STATE ET DU CACHE GLOBAL
-                localStorage.setItem('ttcav_players_cache_v1', JSON.stringify(state.players));
-                
-                renderPlayers();
-                showToast(`Points mensuels de ${p.nom} : ${Math.round(mPts)}`);
-            }
-        }
-    } catch (e) {
-        showToast("Erreur lors du rafraîchissement individuel.", true);
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-sync-alt"></i>';
-        }
-    }
-};
-
-window.renderPlayers = function () {
-    if (!elements.playersList) return;
-    
-    // Calcul à la volée des métriques détaillées d'après le cache de l'historique FFTT
-    const today = new Date();
-    const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    
-    state.players.forEach(p => {
-        const histoData = JSON.parse(localStorage.getItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`) || 'null');
-        const virtPts = parseFloat(localStorage.getItem(`ttcav_virtuel_${p.licence}_${monthLabel}`) || '0');
-        p.ph1 = 0; p.ph2 = 0; p.prog_ann = 0;
-        p.virtuel = (parseFloat(p.points)||0) + virtPts;
-        p.prog_virt = virtPts;
-        
-        if (histoData && histoData.length > 0) {
-            let lastPh1 = [...histoData].reverse().find(h => /ph.*(1|I)/i.test(getVal(h.saison)));
-            let lastPh2 = [...histoData].reverse().find(h => /ph.*(2|II)/i.test(getVal(h.saison)));
-            
-            if (lastPh1) p.ph1 = parseInt(getVal(lastPh1.point)) || 0;
-            if (lastPh2) p.ph2 = parseInt(getVal(lastPh2.point)) || 0;
-            
-            if (p.ph1 > 0) p.prog_ann = Math.round((parseInt(p.points)||0) - p.ph1);
-        }
-    });
-
-    const filter = elements.playerSearch ? elements.playerSearch.value : '';
-    const normStr = s => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    let filtered = state.players.filter(p => normStr(`${p.nom} ${p.prenom}`).includes(normStr(filter)) || p.licence.includes(filter));
-    
-    filtered.sort((a, b) => {
-        let valA, valB;
-        if (window.playerSortCol === 'prog') { valA = parseInt(a.prog_mens)||0; valB = parseInt(b.prog_mens)||0; }
-        else if (window.playerSortCol === 'prog_ann') { valA = parseInt(a.prog_ann)||0; valB = parseInt(b.prog_ann)||0; }
-        else if (window.playerSortCol === 'virt') { valA = parseFloat(a.points_mensuels || a.points_officiels || a.points)||0; valB = parseFloat(b.points_mensuels || b.points_officiels || b.points)||0; }
-        else if (window.playerSortCol === 'ph1') { valA = parseInt(a.ph1)||0; valB = parseInt(b.ph2)||0; } // Correction ph2 -> ph1 ? Non, wait.
-        else if (window.playerSortCol === 'ph2') { valA = parseInt(a.ph2)||0; valB = parseInt(b.ph2)||0; }
-        else if (window.playerSortCol === 'name') { valA = a.nom.toLowerCase(); valB = b.nom.toLowerCase(); }
-        else { valA = parseFloat(a.points_officiels || a.points)||0; valB = parseFloat(b.points_officiels || b.points)||0; }
-
-        if (window.playerSortCol === 'name') return valA.localeCompare(valB) * window.playerSortOrder;
-        return (valA - valB) * window.playerSortOrder;
-    });
-
-    elements.playerCountBadge.textContent = `${filtered.length} joueurs`;
-    if (filtered.length === 0) {
-        elements.playersList.innerHTML = `<div style="padding: 2rem; text-align: center; color: #64748b;">Aucun joueur trouvé.</div>`;
-        return;
-    }
-    
-    // Contruction de l'entête de colonnes cliquable avec 6 colonnes
-    let html = `
-        <div class="player-wrapper" style="background: rgba(255,255,255,0.05); margin-bottom: 0.5rem; cursor: pointer; border-bottom: 2px solid var(--primary); padding: 0.5rem 0;">
-            <div class="player-item" style="box-shadow: none; background: transparent; pointer-events: none; margin: 0; padding: 0.5rem 1rem;">
-                <div class="player-main" onclick="setPlayerSort('name')" style="pointer-events: auto; justify-content: flex-start; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; text-transform: uppercase;">
-                    <span style="display:inline-block; margin-right:8px;"><i class="fas fa-sort${window.playerSortCol === 'name' ? (window.playerSortOrder===1?'-alpha-down':'-alpha-up') : ''}" style="opacity: ${window.playerSortCol === 'name' ? '1' : '0.3'}"></i></span> JOUEUR
-                </div>
-                <div class="player-stats-grid" style="pointer-events: auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem;">
-                    <div class="stat-group" onclick="setPlayerSort('points')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'points' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'points' ? '1' : '0.3'}"></i>Officiel</div>
-                    </div>
-                    <div class="stat-group" onclick="setPlayerSort('virt')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'virt' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'virt' ? '1' : '0.3'}"></i>Mensuel</div>
-                    </div>
-                    <div class="stat-group" onclick="setPlayerSort('ph1')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'ph1' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph1' ? '1' : '0.3'}"></i>Ph. 1</div>
-                    </div>
-                    <div class="stat-group" onclick="setPlayerSort('ph2')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'ph2' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph2' ? '1' : '0.3'}"></i>Ph. 2</div>
-                    </div>
-                    <div class="stat-group" onclick="setPlayerSort('prog')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'prog' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog' ? '1' : '0.3'}"></i>Mois</div>
-                    </div>
-                    <div class="stat-group" onclick="setPlayerSort('prog_ann')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'prog_ann' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog_ann' ? '1' : '0.3'}"></i>Année</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    html += filtered.map(p => {
-        const ptsOff = parseInt(p.points_officiels || p.points) || 0;
-        const ptsMens = p.points_mensuels || ptsOff;
-        const progMens = Math.round(ptsMens - ptsOff);
-        const progAnn = parseInt(p.prog_ann) || 0;
-        const ph1 = parseInt(p.ph1) || '-';
-        const ph2 = parseInt(p.ph2) || '-';
-        
-        // Couleurs par genre : Rose #f472b6 pour les filles, Bleu ciel #38bdf8 pour les garçons
-        const isFemale = (p.sexe === 'F');
-        const ptsStyle = isFemale ? 'style="color: #f472b6;" title="Joueuse"' : 'style="color: #38bdf8;" title="Joueur"';
-        
-        const isOpen = state.activeHistoryLicence === p.licence;
-        
-        return `
-            <div class="player-wrapper">
-                <div class="player-item" onclick="togglePlayerHistory('${p.licence}')">
-                    <div class="player-main">
-                        <img src="https://www.fftt.com/site/joueurs/photos/${p.licence}.jpg" class="player-photo" onerror="this.src='https://ui-avatars.com/api/?name=${p.nom}+${p.prenom}'">
-                        <div class="player-name-box">
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span class="player-name">${p.nom} ${p.prenom}</span>
-                                <button class="btn-sync-mini" onclick="event.stopPropagation(); refreshSinglePlayerPoints('${p.licence}')" title="Rafraîchir en direct">
-                                    <i class="fas fa-sync-alt"></i>
-                                </button>
-                            </div>
-                            <span class="player-license">${p.licence}</span>
-                        </div>
-                    </div>
-                    <div class="player-stats-grid" style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem;">
-                        <div class="stat-group"><div class="stat-label">Officiel</div><div class="stat-value" ${ptsStyle}>${ptsOff}</div></div>
-                        <div class="stat-group"><div class="stat-label">Mensuel</div><div class="stat-value" style="color:#fbbf24">${Math.round(ptsMens)} <small style="font-size:0.65rem; color:${progMens>=0?'#4ade80':'#f87171'}">${progMens>=0?'+':''}${Math.round(progMens)}</small></div></div>
-                        <div class="stat-group"><div class="stat-label">Ph. 1</div><div class="stat-value" style="color:var(--text-muted)">${ph1}</div></div>
-                        <div class="stat-group"><div class="stat-label">Ph. 2</div><div class="stat-value" style="color:var(--text-muted)">${ph2}</div></div>
-                        <div class="stat-group"><div class="stat-label">Mois</div><div class="stat-value ${progMens >= 0 ? 'prog-up' : 'prog-down'}">${progMens}</div></div>
-                        <div class="stat-group"><div class="stat-label">Année</div><div class="stat-value ${progAnn >= 0 ? 'prog-up' : 'prog-down'}">${progAnn}</div></div>
-                    </div>
-                </div>
-                <div class="player-history-box" id="history-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='histo' ? 'block' : 'none'}">
-                    <div class="history-header">
-                        <span class="history-title">Historique des points</span>
-                        <div style="display:flex; gap:10px;">
-                            <button class="btn-close-history" style="background:var(--primary); color:white;" onclick="togglePlayerMatches('${p.licence}')">Matchs</button>
-                            <button class="btn-close-history" onclick="togglePlayerHistory('${p.licence}', true)">Fermer</button>
-                        </div>
-                    </div>
-                    <div class="chart-container"><canvas id="chart-${p.licence}"></canvas></div>
-                </div>
-                <div class="player-history-box" id="matches-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='matches' ? 'block' : 'none'}; padding: 1.5rem;">
-                    <div class="history-header">
-                        <span class="history-title">Dernières Parties</span>
-                        <div style="display:flex; gap:10px;">
-                            <button class="btn-close-history" style="background:var(--primary); color:white;" onclick="togglePlayerHistory('${p.licence}')">Graphique</button>
-                            <button class="btn-close-history" onclick="togglePlayerMatches('${p.licence}', true)">Fermer</button>
-                        </div>
-                    </div>
-                    <div id="match-list-${p.licence}" class="match-list-container" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
-                        <div style="text-align:center; padding: 2rem; opacity:0.5;">Chargement des matchs...</div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-    
-    elements.playersList.innerHTML = html;
-
-    // Restaurer l'historique ou les matchs
-    if (state.activeHistoryLicence) {
-        if (state.activeHistoryType === 'histo') {
-            setTimeout(() => {
-                delete state.charts[state.activeHistoryLicence];
-                loadPlayerHistory(state.activeHistoryLicence);
-            }, 50);
-        } else {
-            setTimeout(() => {
-                loadPlayerMatches(state.activeHistoryLicence);
-            }, 50);
-        }
-    }
-};
-
-window.togglePlayerHistory = async function (licence, forceClose = false) {
-    const box = document.getElementById(`history-${licence}`);
-    if (!box) return;
-
-    if ((state.activeHistoryLicence === licence && state.activeHistoryType === 'histo') || forceClose) {
-        state.activeHistoryLicence = null;
-        renderPlayers();
-        return;
-    }
-
-    state.activeHistoryLicence = licence;
-    state.activeHistoryType = 'histo';
-    renderPlayers();
-};
-
-window.togglePlayerMatches = async function (licence, forceClose = false) {
-    const box = document.getElementById(`matches-${licence}`);
-    if (!box) {
-        // Si on clique depuis l'item principal
-        state.activeHistoryLicence = licence;
-        state.activeHistoryType = 'matches';
-        renderPlayers();
-        return;
-    }
-
-    if ((state.activeHistoryLicence === licence && state.activeHistoryType === 'matches') || forceClose) {
-        state.activeHistoryLicence = null;
-        renderPlayers();
-        return;
-    }
-
-    state.activeHistoryLicence = licence;
-    state.activeHistoryType = 'matches';
-    renderPlayers();
-};
-
-window.loadPlayerMatches = async function (licence) {
-    const container = document.getElementById(`match-list-${licence}`);
-    if (!container) return;
-    
-    try {
-        const data = await fetchData('getPlayerMatches', { licence });
-        const matches = data.matches || data.partie;
-
-        if (!matches || !Array.isArray(matches) || matches.length === 0) {
-            container.innerHTML = '<div style="text-align:center; padding:2rem; opacity:0.5;">Aucun match trouvé pour cette phase.</div>';
-            return;
-        }
-        
-        // Log du premier match pour aider l'utilisateur à identifier les clés
-        console.log("Structure d'un match FFTT détectée :", matches[0]);
-
-        const player = state.players.find(pl => pl.licence === licence);
-        const playerPoints = player ? parseFloat(player.points) : 0;
-
-        // Groupement par Date + Épreuve
-        let html = '';
-        let currentGroupKey = '';
-        
-        matches.forEach(m => {
-            const mDate = m.date;
-            const mEpreuve = m.epreuve;
-            const groupKey = `${mDate}_${mEpreuve}`;
-
-            if (groupKey !== currentGroupKey) {
-                currentGroupKey = groupKey;
-                html += `<div style="background: rgba(255,255,255,0.05); padding: 6px 12px; margin: 18px 0 10px 0; border-radius: 4px; font-size: 0.8rem; color: var(--primary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-left: 3px solid var(--primary);">${mDate} - ${mEpreuve}</div>`;
-            }
-            
-            // --- MAPPING SELON DOC SMARTPING 2.0 (xml_partie_mysql.php) ---
-            const mNom = m.advnompre || m.nom || "Inconnu";
-            
-            // Gestion spéciale des Numérotés (N°1, N°150...)
-            let mClastRaw = (m.advclaof || m.clast || m.classement || "").toString().trim();
-            let mClastLabel = mClastRaw;
-            let mClastPoints = 500;
-
-            // Tentative d'extraction intelligente : On cherche un gros nombre (points) et un petit (rang)
-            const numbers = mClastRaw.match(/\d+/g) || [];
-            let foundRank = null;
-            let foundPoints = null;
-
-            numbers.forEach(numStr => {
-                const n = parseInt(numStr);
-                // Un rang national est entre 1 et 1000, mais les points commencent à 500
-                if (n > 0 && n < 500) foundRank = n;
-                if (n >= 500) foundPoints = n;
-            });
-
-            const isNumbered = (foundRank !== null && foundRank < 500) || 
-                               (mClastRaw.toUpperCase().includes('N') && foundRank !== null && foundRank < 1000);
-            
-            if (isNumbered) {
-                const rank = foundRank || "?";
-                const pts = foundPoints || Math.max(2100, 3100 - (parseInt(rank) * 1.0) || 0);
-                mClastLabel = `N°${rank} (${pts} pts)`;
-                mClastPoints = pts;
-            } else {
-                mClastPoints = foundPoints || parseFloat(mClastRaw) || 500;
-                mClastLabel = `${mClastPoints} pts`;
-            }
-
-            const mVicRaw = (m.vd || m.vic || m.victoire || "").toString().toUpperCase();
-            const isVic = mVicRaw.startsWith('V'); 
-            const mCoef = parseFloat(m.coefchamp || m.coef || m.coeff || m.coefficient || 1.0);
-            let mPts = parseFloat(m.pointres || m.pts || m.pointselo);
-            
-            // On cherche AUSSI les sets via scan de clés (fallback si pas dans champ explicite)
-            let playerSets = [];
-            let opponentSets = [];
-            Object.keys(m).forEach(key => {
-                const k = key.toLowerCase();
-                const setMatch = k.match(/(set|score|res)[_a-z]*(\d+)([ab])/i);
-                if (setMatch) {
-                    const idx = parseInt(setMatch[2]) - 1;
-                    if (setMatch[3].toLowerCase() === 'a') playerSets[idx] = m[key];
-                    else opponentSets[idx] = m[key];
-                }
-            });
-
-            // Si l'API ne renvoie pas les points ou qu'ils sont à 0, calcul manuel (Fédération Française de Tennis de Table - Elo)
-            if (isNaN(mPts) || (mPts === 0 && !isVic)) {
-                const diff = mClastPoints - playerPoints;
-                let gain = 0;
-                if (isVic) {
-                    if (diff >= 500) gain = 40;
-                    else if (diff >= 400) gain = 28;
-                    else if (diff >= 300) gain = 22;
-                    else if (diff >= 200) gain = 17;
-                    else if (diff >= 150) gain = 13;
-                    else if (diff >= 100) gain = 10;
-                    else if (diff >= 50) gain = 8;
-                    else if (diff >= 25) gain = 7;
-                    else if (diff >= -24) gain = 6;
-                    else if (diff >= -49) gain = 5;
-                    else if (diff >= -99) gain = 4;
-                    else if (diff >= -149) gain = 3;
-                    else if (diff >= -199) gain = 2;
-                    else if (diff >= -299) gain = 1;
-                    else if (diff >= -399) gain = 0.5;
-                    else gain = 0;
-                } else {
-                    if (diff >= 500) gain = 0;
-                    else if (diff >= 400) gain = -0.5;
-                    else if (diff >= 300) gain = -1;
-                    else if (diff >= 200) gain = -2;
-                    else if (diff >= 150) gain = -3;
-                    else if (diff >= 100) gain = -4;
-                    else if (diff >= 50) gain = -5;
-                    else if (diff >= -24) gain = -6;
-                    else if (diff >= -49) gain = -7;
-                    else if (diff >= -99) gain = -8;
-                    else if (diff >= -149) gain = -10;
-                    else if (diff >= -199) gain = -13;
-                    else if (diff >= -299) gain = -17;
-                    else if (diff >= -399) gain = -22;
-                    else if (diff >= -499) gain = -28;
-                    else gain = -40;
-                }
-                mPts = gain * mCoef;
-            }
-
-            const ptsSign = mPts >= 0 ? '+' : '';
-
-            // Filtrer les sets vides
-            const finalPlayerSets = playerSets.filter(s => s !== undefined && s !== "");
-            const finalOpponentSets = opponentSets.filter(s => s !== undefined && s !== "");
-
-            let setsHtml = '';
-            if (finalPlayerSets.length > 0) {
-                setsHtml = `<div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
-                    <div style="display: flex; gap: 4px;">
-                        ${finalPlayerSets.map(s => `<div style="width: 24px; height: 20px; background: #4ade80; color: #fff; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-weight: 600;">${s}</div>`).join('')}
-                    </div>
-                    <div style="display: flex; gap: 4px;">
-                        ${finalOpponentSets.map(s => `<div style="width: 24px; height: 20px; background: #334155; color: #fff; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-weight: 500;">${s}</div>`).join('')}
-                    </div>
-                </div>`;
-            }
-
-            html += `
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.02); margin-bottom: 2px; border-radius: 4px;">
-                    <div style="display: flex; align-items: center; gap: 15px; flex: 1;">
-                        <div style="width: 42px; height: 38px; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: ${isVic?'rgba(74, 222, 128, 0.1)':'rgba(248, 113, 113, 0.1)'}; color: ${isVic?'#4ade80':'#f87171'}; font-weight: bold; font-size: 0.9rem; border: 1px solid ${isVic?'rgba(74, 222, 128, 0.2)':'rgba(248, 113, 113, 0.2)'};">
-                            ${ptsSign}${mPts.toFixed(1)}
-                        </div>
-                        <div style="display:flex; flex-direction:column;">
-                            <span style="font-weight: 600; font-size: 0.95rem;">${mNom}</span>
-                            <span style="font-size: 0.8rem; opacity: 0.6;">${mClastLabel} • Coef: ${mCoef}</span>
-                        </div>
-                    </div>
-                    ${setsHtml}
-                </div>
-            `;
-        });
-        container.innerHTML = html;
-    } catch (e) {
-        container.innerHTML = `<div style="text-align:center; padding:2rem; color:#f87171;">Erreur lors du chargement : ${e.message}</div>`;
-    }
-};
-
-window.loadPlayerHistory = async function (licence) {
-    const canvas = document.getElementById(`chart-${licence}`);
-    if (!canvas || state.charts[licence]) return;
-    
-    const today = new Date();
-    const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    const cacheKey = `ttcav_histo_v3_${licence}_${monthLabel}`;
-    const cached = localStorage.getItem(cacheKey);
-    let historyData = null;
-
-    try {
-        if (cached) {
-            historyData = JSON.parse(cached);
-        } else {
-            updateLoaderStep('Chargement de l\'historique...');
-            setAppBusy(true);
-            const data = await fetchData('getPlayerHistory', { licence });
-            if (data && data.histo) {
-                historyData = Array.isArray(data.histo) ? data.histo : [data.histo]; // Retrait du .reverse()
-                localStorage.setItem(cacheKey, JSON.stringify(historyData));
-            }
-        }
-
-        if (historyData) {
-            state.charts[licence] = new Chart(canvas.getContext('2d'), {
-                type: 'line',
-                data: {
-                    labels: historyData.map(h => getVal(h.saison).replace('Saison ', '')),
-                    datasets: [{ 
-                        label: 'Points', 
-                        data: historyData.map(h => parseInt(getVal(h.point)) || 0), 
-                        borderColor: '#ef4444', 
-                        backgroundColor: '#ef4444',
-                        borderWidth: 3,
-                        pointBackgroundColor: '#ef4444',
-                        pointBorderWidth: 2,
-                        pointRadius: 4,
-                        tension: 0.3 
-                    }]
-                },
-                options: { 
-                    responsive: true, 
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            backgroundColor: '#334155',
-                            titleFont: { size: 14, family: 'Outfit' },
-                            bodyFont: { size: 14, weight: 'bold' },
-                            displayColors: false,
-                            callbacks: {
-                                title: (tooltipItems) => {
-                                    const idx = tooltipItems[0].dataIndex;
-                                    const rawLabel = getVal(historyData[idx].saison);
-                                    
-                                    // Détection ultra-robuste de la phase (chiffres, romains, ou simple position)
-                                    let phNum = "";
-                                    if (/(ph|phase).*(1|I)/i.test(rawLabel) || /\(1\)/.test(rawLabel) || /1$/.test(rawLabel)) phNum = "1";
-                                    else if (/(ph|phase).*(2|II)/i.test(rawLabel) || /\(2\)/.test(rawLabel) || /2$/.test(rawLabel)) phNum = "2";
-                                    else phNum = (idx % 2 === 0) ? "1" : "2"; // Guess par alternance si rien n'est trouvé
-
-                                    const yearMatch = rawLabel.match(/20\d\d/g);
-                                    let yearStr = yearMatch ? (yearMatch.length > 1 ? `${yearMatch[0]}/${yearMatch[1]}` : yearMatch[0]) : rawLabel;
-                                    return `Saison ${yearStr} • Phase ${phNum}`;
-                                },
-                                label: (context) => `${context.parsed.y} points`
-                            }
-                        }
-                    },
-                    scales: {
-                        x: { 
-                            grid: { color: 'rgba(255,255,255,0.05)', tickColor: 'transparent' },
-                            ticks: {
-                                maxRotation: 0,
-                                autoSkip: false,
-                                callback: function(value, index, values) {
-                                    const label = this.getLabelForValue(value);
-                                    const isPh1 = /ph.*1/i.test(label) || /phase.*1/i.test(label);
-                                    const isPh2 = /ph.*2/i.test(label) || /phase.*2/i.test(label);
-                                    
-                                    // On affiche l'année pour la Phase 1 (ou au moins 1 fois sur 2 si pas de phase détectée)
-                                    if (isPh1 || (!isPh2 && index % 2 === 0)) {
-                                        const yMatch = label.match(/20\d\d/);
-                                        return yMatch ? yMatch[0] : label.substring(0, 4);
-                                    }
-                                    return ""; // Vide pour la Phase 2
-                                }
-                            }
-                        },
-                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: false }
-                    }
-                }
-            });
-        }
-    } catch (e) {
-        logDebug("Error loading history: " + e.message, "error");
-    } finally {
-        setAppBusy(false);
-    }
-};

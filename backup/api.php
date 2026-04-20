@@ -26,10 +26,7 @@ if (!is_dir($cacheDir)) {
     mkdir($cacheDir, 0777, true);
 }
 $cacheDuration = 86400; // 24 heures
-$bypassCache = (isset($_GET['refresh']) && $_GET['refresh'] == '1') 
-               || ($action === 'getPlayerDetail') 
-               || ($action === 'getMatchPlayers')
-               || ($action === 'clearCache');
+$bypassCache = isset($_GET['refresh']) && $_GET['refresh'] == '1';
 
 // Création d'un identifiant unique pour la requête (basé sur tous les paramètres sauf refresh)
 $paramsForCache = $_GET;
@@ -43,7 +40,8 @@ if (!$bypassCache && file_exists($cacheFile) && (time() - filemtime($cacheFile) 
     if ($content && strpos($content, '{') === 0) {
         ob_clean();
         header('X-Cache: HIT');
-        header('X-Cache-Action: ' . $action);
+        header('X-Cache-File: ' . basename($cacheFile));
+        header('X-Cache-Remaining: ' . ($cacheDuration - (time() - filemtime($cacheFile))));
         echo $content;
         exit;
     }
@@ -55,7 +53,7 @@ if (!$appId || !$appKey || !$action) {
     exit;
 }
 
-$baseUrl = 'http://www.fftt.com/mobile/pxml/';
+$baseUrl = "https://www.fftt.com/mobile/pxml/";
 
 // Signature calculation
 $tm = date('YmdHis') . substr(microtime(), 2, 3);
@@ -126,63 +124,6 @@ switch ($action) {
         $params['auto'] = 1;
         $xml = fetchData($baseUrl . 'xml_result_equ.php', $params);
         break;
-    case 'getPlayers':
-        $params['club'] = $_GET['clubId'] ?? '';
-        $xml = fetchData($baseUrl . 'xml_liste_joueur.php', $params);
-        break;
-    case 'getPlayerHistory':
-        $params['numlic'] = $_GET['licence'] ?? '';
-        $xml = fetchData($baseUrl . 'xml_histo_classement.php', $params);
-        break;
-    case 'getPlayerMatches':
-        $licence = $_GET['licence'] ?? '';
-        $params['numlic'] = $licence;
-        // On utilise mysql.php qui contient souvent plus de détails sur les sets
-        $xml = fetchData($baseUrl . 'xml_partie_mysql.php', $params);
-        
-        $xmlObj = @simplexml_load_string($xml);
-        $matches = [];
-        if ($xmlObj) {
-            $list = $xmlObj->partie ?? $xmlObj->Partie ?? null;
-            if ($list) {
-                foreach ($list as $p) {
-                    $m = [];
-                    foreach ($p as $key => $val) {
-                        $m[(string)$key] = (string)$val;
-                    }
-                    $matches[] = $m;
-                }
-            }
-        }
-        
-        // --- SAUVEGARDE FORCEE EN JSON ---
-        if ($licence) {
-            $dataDir = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'players';
-            if (!is_dir($dataDir)) @mkdir($dataDir, 0777, true);
-            
-            $savePath = $dataDir . DIRECTORY_SEPARATOR . $licence . '.json';
-            $success = @file_put_contents($savePath, json_encode([
-                'updated' => date('Y-m-d H:i:s'),
-                'licence' => $licence,
-                'matches' => $matches
-            ], JSON_UNESCAPED_UNICODE));
-            
-            // Debug log en cas d'échec
-            if (!$success) {
-                file_put_contents(__DIR__ . '/debug_api.log', "[" . date('Y-m-d H:i:s') . "] Failed to save $savePath. Dir exists: " . (is_dir($dataDir)?'Y':'N') . " writable: " . (is_writable($dataDir)?'Y':'N') . "\n", FILE_APPEND);
-            }
-        }
-
-        ob_clean();
-        echo json_encode([
-            'licence' => $licence, 
-            'matches' => $matches, 
-            'count' => count($matches),
-            'debugUrl' => $baseUrl . 'xml_partie.php?' . http_build_query($params),
-            'rawXmlHead' => substr((string)$xml, 0, 500)
-        ]);
-        exit;
-        break;
 
     case 'saveSummary':
         $matchId = $_GET['matchId'] ?? '';
@@ -225,14 +166,6 @@ switch ($action) {
         }
         echo json_encode(['success' => true]);
         exit;
-    case 'getPlayerDetail':
-        $params['licence'] = $_GET['licence'] ?? '';
-        $xml = fetchData($baseUrl . 'xml_joueur.php', $params);
-        break;
-    case 'getMatchPlayers':
-        $params['renc_id'] = $_GET['renc_id'] ?? '';
-        $xml = fetchData($baseUrl . 'xml_joueur_renc.php', $params);
-        break;
     default:
         ob_clean();
         echo json_encode(['error' => 'Unknown action']);
