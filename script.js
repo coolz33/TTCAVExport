@@ -361,8 +361,9 @@ function setAppBusy(busy) {
 
 function updateLoaderStep(text) {
     if (elements.loaderText) {
-        elements.loaderText.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:10px;">
-            <div style="font-weight: 600;">${text}</div>
+        elements.loaderText.innerHTML = `
+        <div class="loader-content-inner">
+            <div class="loader-step-text">${text}</div>
         </div>`;
     }
 }
@@ -477,10 +478,10 @@ async function loadTeams(forceRefresh = false) {
     try {
         if (elements.resultsGrid) {
             elements.resultsGrid.innerHTML = `
-                <div style="grid-column: 1/-1; text-align: center; padding: 4rem; opacity: 0.5;">
-                    <i class="fas fa-hand-pointer" style="font-size: 2rem; margin-bottom: 1rem; display: block;"></i>
-                    Sélectionnez une équipe et une journée pour afficher les résultats.
-                </div>
+            <div class="empty-state-full">
+                <i class="fas fa-hand-pointer empty-state-icon"></i>
+                Sélectionnez une équipe et une journée pour afficher les résultats.
+            </div>
             `;
         }
         const data = await fetchData('getTeams', {}, forceRefresh);
@@ -961,7 +962,7 @@ function renderResults() {
     if (elements.btnCopyAll) elements.btnCopyAll.disabled = !hasResults;
 
     if (!hasResults) {
-        elements.resultsGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; opacity: 0.5; padding: 4rem;">Aucun match trouvé pour cette journée.</div>';
+        elements.resultsGrid.innerHTML = '<div class="empty-state-full">Aucun match trouvé pour cette journée.</div>';
         return;
     }
 
@@ -986,21 +987,21 @@ function renderResults() {
         if (myScore === 0 && opScore === 0) { statusClass = 'draw'; statusText = 'À VENIR'; }
 
         return `
-            <div class="result-card ${statusClass}" style="animation-delay: ${index * 0.1}s; padding: 1rem 1.2rem 0.8rem 1.2rem;">
-                <div class="card-header" style="margin-bottom: 0.4rem; border-bottom: none; padding-bottom: 0;">
-                    <span class="category" style="font-weight: 700; font-size: 0.75rem; text-transform: uppercase; color: #94a3b8; letter-spacing: 0.5px;">${res.category}</span>
-                    <span class="status-badge status-${statusClass}" style="font-size: 0.6rem; padding: 1px 6px;">${statusText}</span>
+            <div class="result-card ${statusClass} result-card-app" style="animation-delay: ${index * 0.1}s;">
+                <div class="card-header-compact">
+                    <span class="category-label">${res.category}</span>
+                    <span class="status-badge-mini status-${statusClass}">${statusText}</span>
                 </div>
-                <div class="match-info" style="margin: 0.3rem 0; display: flex; align-items: center; gap: 10px;">
-                    <div class="side team-a" style="font-size: 0.9rem; font-weight: 600; text-align: right; flex: 1;">${res.isHome ? res.teamName : res.opponent}</div>
+                <div class="match-info-compact">
+                    <div class="side-team-compact text-right">${res.isHome ? res.teamName : res.opponent}</div>
                     <div class="score-display">
-                        <span class="score-badge ${statusClass}" style="padding: 4px 10px; font-size: 1rem; font-weight: 800; border-radius: 6px; background: rgba(255,255,255,0.1); border: none;">${res.score}</span>
+                        <span class="score-badge-compact ${statusClass}">${res.score}</span>
                     </div>
-                    <div class="side team-b" style="font-size: 0.9rem; font-weight: 600; text-align: left; flex: 1;">${res.isHome ? res.opponent : res.teamName}</div>
+                    <div class="side-team-compact text-left">${res.isHome ? res.opponent : res.teamName}</div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.2rem; padding-top: 0.4rem;">
-                    <span class="match-date" style="font-size: 0.7rem; opacity: 0.5;"><i class="far fa-calendar-alt"></i> ${res.date}</span>
-                    ${res.detailLink ? `<button class="secondary" style="padding: 3px 10px; font-size: 0.7rem; height: auto;" onclick="showMatchDetails(${index})">Détails</button>` : ''}
+                <div class="card-footer-compact">
+                    <span class="match-date-mini"><i class="far fa-calendar-alt"></i> ${res.date}</span>
+                    ${res.detailLink ? `<button class="secondary btn-details-mini" onclick="showMatchDetails(${index})">Détails</button>` : ''}
                 </div>
             </div>
         `;
@@ -1076,12 +1077,12 @@ async function showMatchDetails(index) {
             const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
 
             elements.exportPanel.innerHTML = `
-                <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-bottom: 1.5rem; background: #1e293b; padding: 1rem; border-radius: 8px; flex-wrap: wrap;">
-                    <button onclick="restoreSavedPlayerPoints()" style="background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;"><i class="fas fa-undo"></i> Restaurer (modif. manuelle)</button>
-                    <button onclick="resetPlayerPointsFromAPI('mensuel')" style="background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;"><i class="fas fa-calendar-alt"></i> Restaurer (Pts Mensuels)</button>
-                    <button onclick="resetPlayerPointsFromAPI('officiel')" style="background: #ef4444; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;"><i class="fas fa-award"></i> Restaurer (Pts Officiels)</button>
-                    <button onclick="copyWPHTMLToClipboard()" style="background: #eab308; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 700;">📋 Copier HTML (Gutenberg)</button>
-                    <button onclick="document.getElementById('export-container').style.display='none'" style="background: #e2e8f0; color: #475569; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;">✕ Fermer</button>
+                <div class="export-actions-sticky">
+                    <button onclick="restoreSavedPlayerPoints()" class="btn-undo"><i class="fas fa-undo"></i> Restaurer (modif. manuelle)</button>
+                    <button onclick="resetPlayerPointsFromAPI('mensuel')" class="btn-mensuel"><i class="fas fa-calendar-alt"></i> Restaurer (Pts Mensuels)</button>
+                    <button onclick="resetPlayerPointsFromAPI('officiel')" class="btn-officiel"><i class="fas fa-award"></i> Restaurer (Pts Officiels)</button>
+                    <button onclick="copyWPHTMLToClipboard()" class="btn-copy">📋 Copier HTML (Gutenberg)</button>
+                    <button onclick="document.getElementById('export-container').style.display='none'" class="secondary btn-close-export">✕ Fermer</button>
                 </div>
                 ${getMatchDetailsHTML(res, data, false, rankingData, dataPlayers)}
             `;
@@ -1324,9 +1325,9 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
         joubs.forEach(j => { equipeBPoints += j.calcPoints || 0; });
 
         // ===== TABLE DE COMPOSITION =====
-        let compoTitleHTML = `<div class="section-title" style="display:flex; justify-content:center; align-items:center; gap: 10px;">
+        let compoTitleHTML = `<div class="section-title compo-title-row">
             La composition des équipes
-            ${!isBatch ? `<button onclick="openPointsEditorModal('${matchID}')" class="btn-sync-mini" title="Édition rapide des points" style="background:#eab308; color:#fff; border:none; width: 24px; height: 24px; border-radius:50%; cursor:pointer;"><i class="fas fa-pen"></i></button>` : ''}
+            ${!isBatch ? `<button onclick="openPointsEditorModal('${matchID}')" class="btn-pen-edit" title="Édition rapide des points"><i class="fas fa-pen"></i></button>` : ''}
         </div>`;
         
         let compoHTML = `
@@ -1870,34 +1871,34 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
 
         // Modal/App View mode
         const appPhotoHTML = (res.photoURL && res.photoURL !== 'URL_DE_VOTRE_IMAGE')
-            ? `<div style="text-align:center; margin-bottom: 2rem;"><img src="${res.photoURL}" alt="Photo d'équipe" style="max-width:100%; border-radius:12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);"></div>`
+            ? `<div class="app-photo-container"><img src="${res.photoURL}" alt="Photo d'équipe" class="app-photo-img"></div>`
             : '';
 
         return `
-        <div class="ttcav-export-wrapper" style="background: white; padding: 20px; border-radius: 12px; margin-bottom: 40px; border-bottom: none;">
-            <div class="match-detail-block" id="anchor-${matchID}">
-                <div class="export-header" style="text-align:center;">
+        <div class="app-match-wrapper" id="anchor-${matchID}">
+            <div class="match-detail-block">
+                <div class="app-export-header">
                     <h1 class="ttcav-wp-main-title">${equipeA}<span class="ttcav-wp-vs">VS</span>${equipeB}</h1>
-                    <div class="export-subtitle" style="margin-top: 1.5rem;">${res.category} <span class="export-match-date">(${res.date})</span></div>
+                    <div class="app-export-subtitle">${res.category} <span class="export-match-date">(${res.date})</span></div>
                     ${appPhotoHTML}
                     ${scoreboardHTML}
                 </div>
-                <div class="ttcav-export-wrapper" style="display: flex; align-items: center; gap: 15px; margin: 2rem 0 4rem 0;">
-                    <div class="ttcav-wp-ai" style="flex: 1; margin: 0 !important;">
+                <div class="app-ai-row">
+                    <div class="app-ai-box">
                         <div id="ai-summary-${matchID}">
                             ${state.aiSummaries[matchID] || '<em>Chargement du résumé...</em>'}
                         </div>
                     </div>
-                    <button id="btn-ai-${matchID}" data-match-id="${matchID}" onclick="generateAISummaryClickHandler('${matchID}', true)" style="flex-shrink: 0; background: #8b5cf6; color: white; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);" title="Regénérer le résumé IA">
-                        <i class="fas fa-sync-alt" style="font-size: 1rem;"></i>
+                    <button id="btn-ai-${matchID}" class="app-ai-btn" data-match-id="${matchID}" onclick="generateAISummaryClickHandler('${matchID}', true)" title="Regénérer le résumé IA">
+                        <i class="fas fa-sync-alt app-ai-icon"></i>
                     </button>
                 </div>
-                <div style="overflow-x: auto;">
+                <div class="app-table-responsive">
                     ${compoHTML}
                     ${partiesHTML}
                 </div>
                 <div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>
-                <div style="overflow-x: auto;">
+                <div class="app-table-responsive">
                     ${statsHTML}
                 </div>
 
@@ -1913,10 +1914,10 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
     } catch (err) {
         logDebug(`Erreur critique dans getMatchDetailsHTML: ${err.message}`, 'error');
         console.error(err);
-        return `<div class="error-box" style="padding: 2rem; border: 2px dashed #ef4444; border-radius: 12px; color: #ef4444; text-align: center; background: #fef2f2;">
-            <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
-            <div style="font-weight: 700;">Erreur d'affichage des détails</div>
-            <div style="font-size: 0.85rem; margin-top: 0.5rem; opacity: 0.8;">Une erreur interne est survenue : ${err.message}</div>
+        return `<div class="error-box">
+            <i class="fas fa-exclamation-triangle error-icon"></i>
+            <div class="error-title">Erreur d'affichage des détails</div>
+            <div class="error-details">Une erreur interne est survenue : ${err.message}</div>
         </div>`;
     }
 }
@@ -1953,12 +1954,12 @@ async function generateAISummaryClickHandler(matchID = null, forceRegen = false)
 
     if (!matchData) {
         logDebug(`Données de match non trouvées pour ID: ${matchID}. Registre: ${Object.keys(state.matchDataRegistry).join(', ')}`, 'error');
-        display.innerHTML = '<span style="color: #64748b;">(Données de match non trouvées pour la génération)</span>';
+        display.innerHTML = '<span class="opacity-5">(Données de match non trouvées pour la génération)</span>';
         return;
     }
 
     if (!state.groqKey) {
-        display.innerHTML = '<span style="color: #ef4444;">Configurez la clé Groq dans les paramètres pour générer le résumé.</span>';
+        display.innerHTML = '<span class="status-defaite">Configurez la clé Groq dans les paramètres pour générer le résumé.</span>';
         return;
     }
     const originalContent = btn ? btn.innerHTML : '';
@@ -2089,22 +2090,22 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
     const originalText = elements.loaderText.textContent;
     let giantHTML = `
         <div class="ttcav-export-global">
-        <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; align-items: center; margin-bottom: 2rem; position: sticky; top: 0; background: #1e293b; padding: 1rem; z-index: 100; border-radius: 0 0 12px 12px; flex-wrap: wrap;">
-            <div id="ai-progress-container" style="flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 10px; min-width: 200px;">
-                <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
-                    <div id="ai-progress-fill" style="width: 0%; height: 100%; background: #eab308; transition: width 0.3s;"></div>
+        <div class="export-actions-sticky">
+            <div id="ai-progress-container" class="ai-progress-container-app">
+                <div class="ai-progress-bar-bg">
+                    <div id="ai-progress-fill" class="ai-progress-fill-bar"></div>
                 </div>
-                <span id="ai-progress-text" style="font-size: 0.75rem; color: #94a3b8; font-weight: 600; min-width: 100px;">Résumés IA : 0%</span>
+                <span id="ai-progress-text" class="ai-progress-text-label">Résumés IA : 0%</span>
             </div>
-            <button onclick="restoreSavedPlayerPoints()" style="background: #3b82f6; color: white; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600;"><i class="fas fa-undo"></i> Restaurer (modif. manuelle)</button>
-            <button onclick="resetPlayerPointsFromAPI('mensuel')" style="background: #10b981; color: white; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600;"><i class="fas fa-calendar-alt"></i> Restaurer (Pts Mensuels)</button>
-            <button onclick="resetPlayerPointsFromAPI('officiel')" style="background: #ef4444; color: white; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600;"><i class="fas fa-award"></i> Restaurer (Pts Officiels)</button>
-            <button onclick="copyWPHTMLToClipboard()" style="background: #eab308; color: white; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700;">📋 Copier HTML</button>
-            <button onclick="document.getElementById('export-container').style.display='none'" class="secondary" style="background: #e2e8f0; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer;">✕ Fermer</button>
+            <button onclick="restoreSavedPlayerPoints()" class="btn-undo"><i class="fas fa-undo"></i> Restaurer (modif. manuelle)</button>
+            <button onclick="resetPlayerPointsFromAPI('mensuel')" class="btn-mensuel"><i class="fas fa-calendar-alt"></i> Restaurer (Pts Mensuels)</button>
+            <button onclick="resetPlayerPointsFromAPI('officiel')" class="btn-officiel"><i class="fas fa-award"></i> Restaurer (Pts Officiels)</button>
+            <button onclick="copyWPHTMLToClipboard()" class="btn-copy">📋 Copier HTML</button>
+            <button onclick="document.getElementById('export-container').style.display='none'" class="secondary btn-close-export">✕ Fermer</button>
         </div>
-        <div style="text-align:center; margin-bottom: 4rem;">
-            <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">Rapport Complet</h1>
-            <p style="opacity: 0.6;">${elements.selectDay.value} — ${state.results.length} rencontres</p>
+        <div class="text-center margin-b-4">
+            <h1 class="export-main-title">Rapport Complet</h1>
+            <p class="export-main-subtitle">${elements.selectDay.value} — ${state.results.length} rencontres</p>
         </div>
     `;
     state.giantHTMLRaw = '';
@@ -2734,11 +2735,11 @@ if (state.appId && state.appKey && state.clubId) {
     setAppBusy(false);
     if (elements.resultsGrid) {
         elements.resultsGrid.innerHTML = `
-            <div style="grid-column: 1/-1; text-align: center; padding: 4rem 2rem;">
-                <i class="fas fa-cog" style="font-size: 3rem; color: var(--primary); margin-bottom: 1.5rem; display: block;"></i>
-                <h3 style="margin-bottom: 0.75rem; color: var(--text);">Configuration requise</h3>
-                <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Veuillez renseigner vos identifiants API FFTT (App ID, App Key et N° de club) dans les paramètres pour commencer.</p>
-                <button onclick="document.getElementById('help-modal-wrapper').style.display='flex'" style="padding: 0.75rem 1.5rem; border-radius: 12px; background: var(--primary); color: white; border: none; cursor: pointer; font-weight: 600; font-size: 1rem;">
+            <div class="config-required-box">
+                <i class="fas fa-cog config-icon"></i>
+                <h3 class="config-title">Configuration requise</h3>
+                <p class="config-desc">Veuillez renseigner vos identifiants API FFTT (App ID, App Key et N° de club) dans les paramètres pour commencer.</p>
+                <button onclick="document.getElementById('help-modal-wrapper').style.display='flex'" class="btn-primary">
                     <i class="fas fa-cog"></i> Ouvrir la configuration
                 </button>
             </div>
@@ -2748,7 +2749,7 @@ if (state.appId && state.appKey && state.clubId) {
 
 function showHelpModal() {
     elements.helpContent.innerHTML = `
-        <h2 style="font-family: 'Outfit', sans-serif; font-weight: 800; letter-spacing: -1px; margin-bottom: 3rem;">Guide de Publication WordPress</h2>
+        <h2 class="guide-title">Guide de Publication WordPress</h2>
         
         <div class="help-section">
             <div class="help-step">
@@ -2764,7 +2765,7 @@ function showHelpModal() {
                 <p>Dans le menu <strong>Styles</strong> de l'éditeur WordPress (icône noir & blanc), ouvrez les options (3 points) et accédez au <strong>CSS Additionnel</strong>.</p>
                 <div class="help-image-container">
                     <img src="img/wp_css_menu.png" alt="Menu Styles Additionnels" class="help-image">
-                    <img src="img/wp_css_editor.png" alt="Éditeur CSS" class="help-image" style="margin-top:15px;">
+                    <img src="img/wp_css_editor.png" alt="Éditeur CSS" class="help-image margin-t-15">
                 </div>
             </div>
 
@@ -2793,7 +2794,7 @@ function showHelpModal() {
         </div>
 
         <div class="help-footer">
-            <p style="font-size: 0.9rem; opacity: 0.5;">Propulsé par TTCAV Export Engine &bull; Guide v2.1</p>
+            <p class="guide-footer-text">Propulsé par TTCAV Export Engine &bull; Guide v2.1</p>
         </div>
     `;
     elements.helpModal.style.display = 'flex';
@@ -2954,7 +2955,7 @@ async function syncPlayerMensuelPoints(playersArray, forceRefresh = false, silen
         for (let i = 0; i < playersToFetch.length; i++) {
             const p = playersToFetch[i];
             if (!silent) {
-                updateLoaderStep(`Précision mensuelle... (${i+1}/${playersToFetch.length})<br><span style="color:var(--primary); font-size:1.1rem;">${p.nom} ${p.prenom}</span>`);
+                updateLoaderStep(`Précision mensuelle... (${i+1}/${playersToFetch.length})<br><span class="color-primary font-size-large">${p.nom} ${p.prenom}</span>`);
             }
             try {
                 // Utilisation du bypass cache pour être sûr d'avoir le point live
@@ -2993,7 +2994,7 @@ async function syncPlayerHistories(playersArray) {
         
         for (let i = 0; i < playersToFetch.length; i++) {
             const p = playersToFetch[i];
-            updateLoaderStep(`Mise en cache des historiques... (${i + 1}/${playersToFetch.length})<br><span style="color:var(--primary); font-size:1.1rem;">${p.nom} ${p.prenom}</span>`);
+            updateLoaderStep(`Mise en cache des historiques... (${i + 1}/${playersToFetch.length})<br><span class="color-primary font-size-large">${p.nom} ${p.prenom}</span>`);
             
             try {
                 const hData = await fetchData('getPlayerHistory', { licence: p.licence });
@@ -3107,35 +3108,34 @@ window.renderPlayers = function () {
 
     elements.playerCountBadge.textContent = `${filtered.length} joueurs`;
     if (filtered.length === 0) {
-        elements.playersList.innerHTML = `<div style="padding: 2rem; text-align: center; color: #64748b;">Aucun joueur trouvé.</div>`;
+        elements.playersList.innerHTML = `<div class="loading-placeholder">Aucun joueur trouvé.</div>`;
         return;
     }
     
-    // Contruction de l'entête de colonnes cliquable avec 6 colonnes
     let html = `
-        <div class="player-wrapper" style="background: rgba(255,255,255,0.05); margin-bottom: 0.5rem; cursor: pointer; border-bottom: 2px solid var(--primary); padding: 0.5rem 0;">
-            <div class="player-item" style="box-shadow: none; background: transparent; pointer-events: none; margin: 0; padding: 0.5rem 1rem;">
-                <div class="player-main" onclick="setPlayerSort('name')" style="pointer-events: auto; justify-content: flex-start; color: var(--text-muted); font-weight: 600; font-size: 0.85rem; text-transform: uppercase;">
-                    <span style="display:inline-block; margin-right:8px;"><i class="fas fa-sort${window.playerSortCol === 'name' ? (window.playerSortOrder===1?'-alpha-down':'-alpha-up') : ''}" style="opacity: ${window.playerSortCol === 'name' ? '1' : '0.3'}"></i></span> JOUEUR
+        <div class="player-header-wrapper">
+            <div class="player-header-item">
+                <div class="player-header-main" onclick="setPlayerSort('name')">
+                    <span class="player-sort-icon"><i class="fas fa-sort${window.playerSortCol === 'name' ? (window.playerSortOrder===1?'-alpha-down':'-alpha-up') : ''}" style="opacity: ${window.playerSortCol === 'name' ? '1' : '0.3'}"></i></span> JOUEUR
                 </div>
-                <div class="player-stats-grid" style="pointer-events: auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem;">
-                    <div class="stat-group" onclick="setPlayerSort('points')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'points' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'points' ? '1' : '0.3'}"></i>Officiel</div>
+                <div class="player-stats-header">
+                    <div class="stat-group" onclick="setPlayerSort('points')">
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'points' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'points' ? '1' : '0.3'}"></i>Officiel</div>
                     </div>
-                    <div class="stat-group" onclick="setPlayerSort('virt')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'virt' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'virt' ? '1' : '0.3'}"></i>Mensuel</div>
+                    <div class="stat-group" onclick="setPlayerSort('virt')">
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'virt' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'virt' ? '1' : '0.3'}"></i>Mensuel</div>
                     </div>
-                    <div class="stat-group" onclick="setPlayerSort('ph1')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'ph1' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph1' ? '1' : '0.3'}"></i>Ph. 1</div>
+                    <div class="stat-group" onclick="setPlayerSort('ph1')">
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'ph1' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph1' ? '1' : '0.3'}"></i>Ph. 1</div>
                     </div>
-                    <div class="stat-group" onclick="setPlayerSort('ph2')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'ph2' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph2' ? '1' : '0.3'}"></i>Ph. 2</div>
+                    <div class="stat-group" onclick="setPlayerSort('ph2')">
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'ph2' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph2' ? '1' : '0.3'}"></i>Ph. 2</div>
                     </div>
-                    <div class="stat-group" onclick="setPlayerSort('prog')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'prog' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog' ? '1' : '0.3'}"></i>Mois</div>
+                    <div class="stat-group" onclick="setPlayerSort('prog')">
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'prog' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog' ? '1' : '0.3'}"></i>Mois</div>
                     </div>
-                    <div class="stat-group" onclick="setPlayerSort('prog_ann')" style="cursor: pointer;">
-                        <div class="stat-label" style="opacity: 1;"><i class="fas fa-sort${window.playerSortCol === 'prog_ann' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog_ann' ? '1' : '0.3'}"></i>Année</div>
+                    <div class="stat-group" onclick="setPlayerSort('prog_ann')">
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'prog_ann' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog_ann' ? '1' : '0.3'}"></i>Année</div>
                     </div>
                 </div>
             </div>
@@ -3150,9 +3150,10 @@ window.renderPlayers = function () {
         const ph1 = parseInt(p.ph1) || '-';
         const ph2 = parseInt(p.ph2) || '-';
         
-        // Couleurs par genre : Rose #f472b6 pour les filles, Bleu ciel #38bdf8 pour les garçons
+        // Couleurs par genre
         const isFemale = (p.sexe === 'F');
-        const ptsStyle = isFemale ? 'style="color: #f472b6;" title="Joueuse"' : 'style="color: #38bdf8;" title="Joueur"';
+        const genderClass = isFemale ? 'pts-gender-f' : 'pts-gender-m';
+        const genderTitle = isFemale ? 'Joueuse' : 'Joueur';
         
         const isOpen = state.activeHistoryLicence === p.licence;
         
@@ -3162,7 +3163,7 @@ window.renderPlayers = function () {
                     <div class="player-main">
                         <img src="https://www.fftt.com/site/joueurs/photos/${p.licence}.jpg" class="player-photo" onerror="this.src='https://ui-avatars.com/api/?name=${p.nom}+${p.prenom}'">
                         <div class="player-name-box">
-                            <div style="display:flex; align-items:center; gap:8px;">
+                            <div class="player-name-box-inner">
                                 <span class="player-name">${p.nom} ${p.prenom}</span>
                                 <button class="btn-sync-mini" onclick="event.stopPropagation(); refreshSinglePlayerPoints('${p.licence}')" title="Rafraîchir en direct">
                                     <i class="fas fa-sync-alt"></i>
@@ -3171,11 +3172,11 @@ window.renderPlayers = function () {
                             <span class="player-license">${p.licence}</span>
                         </div>
                     </div>
-                    <div class="player-stats-grid" style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem;">
-                        <div class="stat-group"><div class="stat-label">Officiel</div><div class="stat-value" ${ptsStyle}>${ptsOff}</div></div>
-                        <div class="stat-group"><div class="stat-label">Mensuel</div><div class="stat-value" style="color:#fbbf24">${Math.round(ptsMens)} <small style="font-size:0.65rem; color:${progMens>=0?'#4ade80':'#f87171'}">${progMens>=0?'+':''}${Math.round(progMens)}</small></div></div>
-                        <div class="stat-group"><div class="stat-label">Ph. 1</div><div class="stat-value" style="color:var(--text-muted)">${ph1}</div></div>
-                        <div class="stat-group"><div class="stat-label">Ph. 2</div><div class="stat-value" style="color:var(--text-muted)">${ph2}</div></div>
+                    <div class="player-stats-grid">
+                        <div class="stat-group"><div class="stat-label">Officiel</div><div class="stat-value ${genderClass}" title="${genderTitle}">${ptsOff}</div></div>
+                        <div class="stat-group"><div class="stat-label">Mensuel</div><div class="stat-value stat-value-mensuel">${Math.round(ptsMens)} <small class="stat-prog-small ${progMens>=0?'stat-prog-up':'stat-prog-down'}">${progMens>=0?'+':''}${Math.round(progMens)}</small></div></div>
+                        <div class="stat-group"><div class="stat-label">Ph. 1</div><div class="stat-value stat-value-muted">${ph1}</div></div>
+                        <div class="stat-group"><div class="stat-label">Ph. 2</div><div class="stat-value stat-value-muted">${ph2}</div></div>
                         <div class="stat-group"><div class="stat-label">Mois</div><div class="stat-value ${progMens >= 0 ? 'prog-up' : 'prog-down'}">${progMens}</div></div>
                         <div class="stat-group"><div class="stat-label">Année</div><div class="stat-value ${progAnn >= 0 ? 'prog-up' : 'prog-down'}">${progAnn}</div></div>
                     </div>
@@ -3183,23 +3184,23 @@ window.renderPlayers = function () {
                 <div class="player-history-box" id="history-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='histo' ? 'block' : 'none'}">
                     <div class="history-header">
                         <span class="history-title">Historique des points</span>
-                        <div style="display:flex; gap:10px;">
-                            <button class="btn-close-history" style="background:var(--primary); color:white;" onclick="togglePlayerMatches('${p.licence}')">Matchs</button>
+                        <div class="history-btns">
+                            <button class="btn-close-history btn-primary-bg" onclick="togglePlayerMatches('${p.licence}')">Matchs</button>
                             <button class="btn-close-history" onclick="togglePlayerHistory('${p.licence}', true)">Fermer</button>
                         </div>
                     </div>
                     <div class="chart-container"><canvas id="chart-${p.licence}"></canvas></div>
                 </div>
-                <div class="player-history-box" id="matches-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='matches' ? 'block' : 'none'}; padding: 1.5rem;">
+                <div class="player-history-box" id="matches-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='matches' ? 'block' : 'none'}">
                     <div class="history-header">
                         <span class="history-title">Dernières Parties</span>
-                        <div style="display:flex; gap:10px;">
-                            <button class="btn-close-history" style="background:var(--primary); color:white;" onclick="togglePlayerHistory('${p.licence}')">Graphique</button>
+                        <div class="history-btns">
+                            <button class="btn-close-history btn-primary-bg" onclick="togglePlayerHistory('${p.licence}')">Graphique</button>
                             <button class="btn-close-history" onclick="togglePlayerMatches('${p.licence}', true)">Fermer</button>
                         </div>
                     </div>
-                    <div id="match-list-${p.licence}" class="match-list-container" style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
-                        <div style="text-align:center; padding: 2rem; opacity:0.5;">Chargement des matchs...</div>
+                    <div id="match-list-${p.licence}" class="match-list-container match-list-scroll">
+                        <div class="loading-placeholder">Chargement des matchs...</div>
                     </div>
                 </div>
             </div>
@@ -3268,7 +3269,7 @@ window.loadPlayerMatches = async function (licence) {
         const matches = data.matches || data.partie;
 
         if (!matches || !Array.isArray(matches) || matches.length === 0) {
-            container.innerHTML = '<div style="text-align:center; padding:2rem; opacity:0.5;">Aucun match trouvé pour cette phase.</div>';
+            container.innerHTML = '<div class="loading-placeholder">Aucun match trouvé pour cette phase.</div>';
             return;
         }
         
@@ -3289,7 +3290,7 @@ window.loadPlayerMatches = async function (licence) {
 
             if (groupKey !== currentGroupKey) {
                 currentGroupKey = groupKey;
-                html += `<div style="background: rgba(255,255,255,0.05); padding: 6px 12px; margin: 18px 0 10px 0; border-radius: 4px; font-size: 0.8rem; color: var(--primary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-left: 3px solid var(--primary);">${mDate} - ${mEpreuve}</div>`;
+                html += `<div class="match-date-group">${mDate} - ${mEpreuve}</div>`;
             }
             
             // --- MAPPING SELON DOC SMARTPING 2.0 (xml_partie_mysql.php) ---
@@ -3393,25 +3394,25 @@ window.loadPlayerMatches = async function (licence) {
 
             let setsHtml = '';
             if (finalPlayerSets.length > 0) {
-                setsHtml = `<div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-end;">
-                    <div style="display: flex; gap: 4px;">
-                        ${finalPlayerSets.map(s => `<div style="width: 24px; height: 20px; background: #4ade80; color: #fff; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-weight: 600;">${s}</div>`).join('')}
+                setsHtml = `<div class="match-sets-col">
+                    <div class="match-sets-row">
+                        ${finalPlayerSets.map(s => `<div class="set-box set-box-win">${s}</div>`).join('')}
                     </div>
-                    <div style="display: flex; gap: 4px;">
-                        ${finalOpponentSets.map(s => `<div style="width: 24px; height: 20px; background: #334155; color: #fff; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-weight: 500;">${s}</div>`).join('')}
+                    <div class="match-sets-row">
+                        ${finalOpponentSets.map(s => `<div class="set-box set-box-loss">${s}</div>`).join('')}
                     </div>
                 </div>`;
             }
 
             html += `
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.02); margin-bottom: 2px; border-radius: 4px;">
-                    <div style="display: flex; align-items: center; gap: 15px; flex: 1;">
-                        <div style="width: 42px; height: 38px; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: ${isVic?'rgba(74, 222, 128, 0.1)':'rgba(248, 113, 113, 0.1)'}; color: ${isVic?'#4ade80':'#f87171'}; font-weight: bold; font-size: 0.9rem; border: 1px solid ${isVic?'rgba(74, 222, 128, 0.2)':'rgba(248, 113, 113, 0.2)'};">
+                <div class="match-row-item">
+                    <div class="match-row-main">
+                        <div class="match-res-badge ${isVic ? 'match-res-win' : 'match-res-loss'}">
                             ${ptsSign}${mPts.toFixed(1)}
                         </div>
-                        <div style="display:flex; flex-direction:column;">
-                            <span style="font-weight: 600; font-size: 0.95rem;">${mNom}</span>
-                            <span style="font-size: 0.8rem; opacity: 0.6;">${mClastLabel} • Coef: ${mCoef}</span>
+                        <div class="match-row-info">
+                            <span class="match-row-name">${mNom}</span>
+                            <span class="match-row-meta">${mClastLabel} • Coef: ${mCoef}</span>
                         </div>
                     </div>
                     ${setsHtml}
@@ -3420,7 +3421,7 @@ window.loadPlayerMatches = async function (licence) {
         });
         container.innerHTML = html;
     } catch (e) {
-        container.innerHTML = `<div style="text-align:center; padding:2rem; color:#f87171;">Erreur lors du chargement : ${e.message}</div>`;
+        container.innerHTML = `<div class="error-box" style="color:#f87171;">Erreur lors du chargement : ${e.message}</div>`;
     }
 };
 
@@ -3540,22 +3541,22 @@ window.openPointsEditorModal = function(matchID) {
     }
     
     let html = `
-    <div style="background:white; border-radius:12px; padding:2rem; width:90%; max-width:500px; box-shadow:0 20px 40px rgba(0,0,0,0.4); transform:scale(0.95); transition:transform 0.2s;" id="points-editor-content">
-        <h2 style="margin-top:0; color:#1e293b; display:flex; justify-content:space-between; align-items:center;">
+    <div class="points-editor-content" id="points-editor-content">
+        <h2 class="points-editor-title">
             Édition des points
-            <button onclick="document.getElementById('points-editor-modal').style.opacity='0'; setTimeout(()=>document.getElementById('points-editor-modal').style.display='none',200);" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#94a3b8;">&times;</button>
+            <button onclick="document.getElementById('points-editor-modal').style.opacity='0'; setTimeout(()=>document.getElementById('points-editor-modal').style.display='none',200);" class="points-editor-close">&times;</button>
         </h2>
-        <p style="color:#64748b; font-size:0.9rem; margin-bottom:1.5rem;">Modifiez les points pour recalculer le rapport. Naviguez avec Tab.</p>
-        <div style="display:flex; flex-direction:column; gap:10px; max-height:60vh; overflow-y:auto; padding-right:10px;">
+        <p class="points-editor-desc">Modifiez les points pour recalculer le rapport. Naviguez avec Tab.</p>
+        <div class="points-editor-list">
     `;
     
     const addPlayerInput = (j) => {
         if (!j || !j.nom) return '';
         const currentVal = Math.round(j.calcPoints);
         return `
-            <div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">
-                <span style="font-weight:600; color:#334155;">${j.nom}</span>
-                <input type="number" class="pe-input" data-nom="${j.nom.replace(/"/g, '&quot;')}" value="${currentVal}" style="width:80px; padding:6px; border-radius:6px; border:1px solid #cbd5e1; text-align:right; font-family:inherit; font-weight:600;" onkeydown="if(event.key==='Enter') savePointsEditorModal()">
+            <div class="pe-item">
+                <span class="pe-name">${j.nom}</span>
+                <input type="number" class="pe-input" data-nom="${j.nom.replace(/"/g, '&quot;')}" value="${currentVal}" onkeydown="if(event.key==='Enter') savePointsEditorModal()">
             </div>
         `;
     };
@@ -3565,9 +3566,9 @@ window.openPointsEditorModal = function(matchID) {
     
     html += `
         </div>
-        <div style="margin-top:2rem; display:flex; justify-content:flex-end; gap:10px;">
-            <button onclick="document.getElementById('points-editor-modal').style.opacity='0'; setTimeout(()=>document.getElementById('points-editor-modal').style.display='none',200);" class="secondary" style="background:#f1f5f9; color:#475569; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;">Annuler</button>
-            <button onclick="savePointsEditorModal()" style="background:#10b981; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;"><i class="fas fa-check"></i> Valider et Recalculer</button>
+        <div class="pe-footer">
+            <button onclick="document.getElementById('points-editor-modal').style.opacity='0'; setTimeout(()=>document.getElementById('points-editor-modal').style.display='none',200);" class="secondary pe-btn-cancel">Annuler</button>
+            <button onclick="savePointsEditorModal()" class="pe-btn-save"><i class="fas fa-check"></i> Valider et Recalculer</button>
         </div>
     </div>
     `;
