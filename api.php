@@ -29,7 +29,9 @@ $cacheDuration = 86400; // 24 heures
 $bypassCache = (isset($_GET['refresh']) && $_GET['refresh'] == '1') 
                || ($action === 'getPlayerDetail') 
                || ($action === 'getMatchPlayers')
-               || ($action === 'clearCache');
+               || ($action === 'clearCache')
+               || ($action === 'saveCustomPoints')
+               || ($action === 'getCustomPoints');
 
 // Création d'un identifiant unique pour la requête (basé sur tous les paramètres sauf refresh)
 $paramsForCache = $_GET;
@@ -49,7 +51,7 @@ if (!$bypassCache && file_exists($cacheFile) && (time() - filemtime($cacheFile) 
     }
 }
 
-if (!$appId || !$appKey || !$action) {
+if (!$action || ((!$appId || !$appKey) && !in_array($action, ['saveCustomPoints', 'getCustomPoints']))) {
     ob_clean();
     echo json_encode(['error' => 'Missing parameters']);
     exit;
@@ -233,6 +235,28 @@ switch ($action) {
         $params['renc_id'] = $_GET['renc_id'] ?? '';
         $xml = fetchData($baseUrl . 'xml_joueur_renc.php', $params);
         break;
+    case 'saveCustomPoints':
+        $jsonStr = $_POST['data'] ?? '';
+        if ($jsonStr) {
+            $sumDir = $cacheDir . '/custom_points';
+            if (!is_dir($sumDir)) mkdir($sumDir, 0777, true);
+            file_put_contents($sumDir . '/points.json', $jsonStr);
+            ob_clean();
+            echo json_encode(['success' => true]);
+            exit;
+        }
+        ob_clean();
+        echo json_encode(['error' => 'Invalid data']);
+        exit;
+    case 'getCustomPoints':
+        $file = $cacheDir . '/custom_points/points.json';
+        ob_clean();
+        if (file_exists($file)) {
+            echo file_get_contents($file);
+        } else {
+            echo json_encode([]);
+        }
+        exit;
     default:
         ob_clean();
         echo json_encode(['error' => 'Unknown action']);

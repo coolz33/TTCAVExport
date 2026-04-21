@@ -13,6 +13,9 @@ const state = {
     matchdays: [],
     results: [],
     matchDataRegistry: {}, // Pour stocker les données de chaque match (clé = matchID)
+    customPlayerPoints: JSON.parse(localStorage.getItem('ttcav_custom_points') || '{}'), // Points override
+    lastGlobalResults: null, // Stockage pour re-render global
+    currentMatchResIndex: null, // Stockage pour re-render single
     aiSummaries: {},       // Cache local des résumés générés
     giantHTMLRaw: '',     // Version brute de l'export WP avec commentaires
     currentMatchData: null, // Compatibilité ancienne vers.
@@ -168,6 +171,18 @@ window.addEventListener('load', () => {
                 loadTeams();
             };
         }
+        
+        // Charger les points personnalisés depuis l'API au démarrage
+        fetch('api.php?action=getCustomPoints')
+            .then(r => r.json())
+            .then(data => {
+                if (data && !data.error && Object.keys(data).length > 0) {
+                    state.customPlayerPoints = data;
+                    localStorage.setItem('ttcav_custom_points', JSON.stringify(data));
+                }
+            })
+            .catch(e => console.error("Erreur chargement points custom", e));
+            
     } catch (e) {
         console.error("Erreur d'initialisation:", e);
         alert("Erreur de démarrage de l'application: " + e.message);
@@ -224,6 +239,34 @@ setupListener('btn-do-clear-cache', clearCacheHandler);
 /** Normalisation pour comparaisons robustes */
 const norm = s => (s || "").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 
+// Helper pour comparer des dates (proximité de N jours)
+function isDateClose(dateStr1, dateStr2, maxDays = 5) {
+    if (!dateStr1 || !dateStr2) return false;
+    try {
+        const parse = (s) => {
+            const parts = s.split(/[\/\-]/).map(p => p.trim());
+            if (parts.length < 3) return null;
+            let day, month, year;
+            if (parts[0].length === 4) {
+                year = parseInt(parts[0]);
+                month = parseInt(parts[1]) - 1;
+                day = parseInt(parts[2]);
+            } else {
+                day = parseInt(parts[0]);
+                month = parseInt(parts[1]) - 1;
+                year = parseInt(parts[2]);
+                if (year < 100) year += 2000;
+            }
+            return new Date(year, month, day);
+        };
+        const d1 = parse(dateStr1);
+        const d2 = parse(dateStr2);
+        if (!d1 || !d2 || isNaN(d1) || isNaN(d2)) return false;
+        const diff = Math.abs(d1 - d2) / (1000 * 60 * 60 * 24);
+        return diff <= maxDays;
+    } catch(e) { return false; }
+}
+
 // ===== UTILITAIRES =====
 
 /** Retourne le label du mois FFTT (si < 11, mois précédent) */
@@ -265,8 +308,12 @@ function getMonthlyPoints(fullName, licence = null) {
         // Dans cache session
         if (state.playerDetailsCache) {
             const cachedEntry = Object.values(state.playerDetailsCache).find(entry => {
-                const combinedNorm = norm(entry.nom || '');
-                return combinedNorm.includes(searchNorm) || searchNorm.includes(combinedNorm);
+                if (!entry.nom) return false;
+                const combinedNorm = norm(entry.nom);
+                // Match exact ou partiel dans les deux sens
+                return combinedNorm === searchNorm || 
+                       combinedNorm.includes(searchNorm) || 
+                       searchNorm.includes(combinedNorm);
             });
             if (cachedEntry) return cachedEntry.points;
         }
@@ -439,8 +486,19 @@ async function loadTeams(forceRefresh = false) {
         const data = await fetchData('getTeams', {}, forceRefresh);
 
         if (data && data.equipe) {
-            state.teams = Array.isArray(data.equipe) ? data.equipe : [data.equipe];
-            logDebug(`${state.teams.length} équipes chargées.`);
+            const rawTeams = Array.isArray(data.equipe) ? data.equipe : [data.equipe];
+            
+            // Déduplication par lien de division pour éviter les doublons réels
+            const seenLinks = new Set();
+            state.teams = rawTeams.filter(t => {
+                const link = t.liendivision || t.liendiv || "";
+                if (!link) return true;
+                if (seenLinks.has(link)) return false;
+                seenLinks.add(link);
+                return true;
+            });
+            
+            logDebug(`${state.teams.length} équipes chargées (après déduplication).`);
 
             // Extract phases
             const phases = new Set();
@@ -486,12 +544,13 @@ async function loadTeams(forceRefresh = false) {
                     const idx = state.teams.indexOf(t);
                     const tRaw = t.libequipe || t.libequ || t.libepr || t.lib || "";
                     
-                    // Formatage standardisé : Villefranche (TTCAV) XX
+                    // Formatage standardisé : Villefranche (TTCAV) XX (Division)
                     const teamNum = tRaw.match(/\d+/) ? tRaw.match(/\d+/)[0] : (idx + 1);
-                    const tName = `Villefranche (TTCAV) ${teamNum}`;
+                    const tDiv = t.libdivision || t.libdiv || "";
+                    const tName = `Villefranche (TTCAV) ${teamNum} ${tDiv ? '- ' + tDiv : ''}`;
 
-                    if (seen.has(tName)) return;
-                    seen.add(tName);
+                    if (seen.has(tName + idx)) return; // Sécurité par index si vraiment identique
+                    seen.add(tName + idx);
 
                     const opt = document.createElement('option');
                     opt.value = idx;
@@ -502,7 +561,7 @@ async function loadTeams(forceRefresh = false) {
                 if (filteredTeams.length > 0) {
                     const validTeam = filteredTeams.find(t => {
                         let link = t.liendivision || t.liendiv || "";
-                        return typeof link === 'string' && link.includes('D1');
+                        return typeof link === 'string' && (link.includes('D1') || link.includes('D2') || link.includes('D3') || link.includes('cx_poule'));
                     }) || filteredTeams[0];
 
                     if (validTeam) {
@@ -524,26 +583,24 @@ async function loadTeams(forceRefresh = false) {
             };
 
             elements.selectTeam.onchange = async () => {
-                const idx = elements.selectTeam.value;
                 setAppBusy(true);
                 try {
-                    if (idx === "all") {
-                        const phaseVal = elements.selectPhase.value;
-                        let filteredTeams = state.teams;
-                        if (phaseVal !== "all") {
-                            filteredTeams = state.teams.filter(t => {
-                                const n = t.libequipe || t.libequ || t.libepr || t.lib || "";
-                                return n.toLowerCase().includes(phaseVal.toLowerCase());
-                            });
-                        }
-                        const validTeam = filteredTeams.find(t => {
-                            let link = t.liendivision || t.liendiv || "";
-                            return typeof link === 'string' && link.includes('D1');
-                        }) || filteredTeams[0];
-                        if (validTeam) await loadMatchdays(validTeam, forceRefresh);
-                    } else {
-                        await loadMatchdays(state.teams[idx], forceRefresh);
+                    // Pour garder un calendrier cohérent (Tour 1, 2, 3 aux bonnes dates), 
+                    // on utilise toujours la première équipe de la phase comme référence pour les tours.
+                    const phaseVal = elements.selectPhase.value;
+                    let filteredTeams = state.teams;
+                    if (phaseVal !== "all") {
+                        filteredTeams = state.teams.filter(t => {
+                            const n = (t.libequipe || t.libequ || t.libepr || t.lib || "").toLowerCase();
+                            return n.includes(phaseVal.toLowerCase()) || !n.includes("phase");
+                        });
                     }
+                    const refTeam = filteredTeams.find(t => {
+                        let link = t.liendivision || t.liendiv || "";
+                        return typeof link === 'string' && (link.includes('D1') || link.includes('D2') || link.includes('D3') || link.includes('cx_poule'));
+                    }) || filteredTeams[0];
+                    
+                    if (refTeam) await loadMatchdays(refTeam, forceRefresh);
                 } finally {
                     setAppBusy(false);
                 }
@@ -590,17 +647,17 @@ async function loadMatchdays(team, forceRefresh = false) {
         const data = await fetchData('getMatches', { divisionId, pouleId }, forceRefresh);
 
         elements.selectDay.innerHTML = '<option value="">Sélectionnez une journée</option>';
+        state.tourDates = {}; // Reset des dates de référence
 
         if (data && data.tour) {
             const roundsList = Array.isArray(data.tour) ? data.tour : [data.tour];
 
-            // Ne garder que les tours joués (score non vide)
+            // Ne garder que les tours qui ont au moins un résultat dans la poule
             const playedRounds = roundsList.filter(r => {
                 let sA = typeof r.scorea === 'string' ? r.scorea.trim() : '';
                 let sB = typeof r.scoreb === 'string' ? r.scoreb.trim() : '';
                 return sA !== '' || sB !== '';
             });
-
             state.matchdays = playedRounds;
             logDebug(`${playedRounds.length} journées jouées trouvées.`);
 
@@ -611,17 +668,28 @@ async function loadMatchdays(team, forceRefresh = false) {
             elements.selectDay.appendChild(allOpt);
 
             const seenRounds = new Set();
-            playedRounds.forEach((round, idx) => {
+            // On itère sur la liste complète pour garder les bons numéros de tour par défaut
+            roundsList.forEach((round, idx) => {
+                let sA = typeof round.scorea === 'string' ? round.scorea.trim() : '';
+                let sB = typeof round.scoreb === 'string' ? round.scoreb.trim() : '';
+                const hasScore = (sA !== '' || sB !== '');
+                
+                // On ne l'affiche dans le menu que s'il y a un score (sauf si mode "all")
+                if (!hasScore) return;
+
                 let d = (typeof round.dateprevue === 'string' ? round.dateprevue : '') ||
                     (typeof round.datereelle === 'string' ? round.datereelle : '') || '';
 
-                let tourExtracted = `Tour n°${idx + 1}`;
-                const tourMatch = getVal(round.libelle).match(/tour n°\d+/i);
-                if (tourMatch) tourExtracted = tourMatch[0];
+                let tourExtracted = `tour ${idx + 1}`;
+                const tourMatch = getVal(round.libelle).match(/(?:tour|journ[eé]e|barrage|titre)\s*(?:n°)?\s*\d+/i);
+                if (tourMatch) tourExtracted = tourMatch[0].toLowerCase().replace(/\s*n°\s*/, ' ');
 
                 const key = tourExtracted.toLowerCase().trim();
                 if (seenRounds.has(key)) return;
                 seenRounds.add(key);
+                
+                // On stocke la date de référence pour ce tour (utile pour le recalage des autres équipes)
+                if (d) state.tourDates[key] = d;
 
                 const opt = document.createElement('option');
                 opt.value = key;
@@ -632,8 +700,8 @@ async function loadMatchdays(team, forceRefresh = false) {
             // Sélection par défaut de la dernière journée
             if (state.matchdays.length > 0) {
                 const lastRound = state.matchdays[state.matchdays.length - 1];
-                const lastTm = getVal(lastRound.libelle).match(/tour n°\d+/i);
-                const lastKey = lastTm ? lastTm[0].toLowerCase().trim() : `tour n°${state.matchdays.length}`;
+                const lastTm = getVal(lastRound.libelle).match(/(?:tour|journ[eé]e|barrage|titre)\s*(?:n°)?\s*\d+/i);
+                const lastKey = lastTm ? lastTm[0].toLowerCase().replace(/\s*n°\s*/, ' ').trim() : `tour ${state.matchdays.length}`;
                 elements.selectDay.value = lastKey;
             }
         } else {
@@ -669,29 +737,46 @@ async function generateResults() {
             if (selectedPhase !== "all") {
                 teamsToProcess = state.teams.filter(t => {
                     if (!t) return false;
-                    const tName = t.libequipe || t.libequ || t.libepr || t.lib || "";
-                    return tName.toLowerCase().includes(selectedPhase.toLowerCase());
+                    const tName = (t.libequipe || t.libequ || t.libepr || t.lib || "").toLowerCase();
+                    const sPhase = selectedPhase.toLowerCase();
+                    // Soit le nom contient la phase, soit le nom ne contient AUCUNE phase (on l'inclut par défaut)
+                    return tName.includes(sPhase) || !tName.includes("phase");
                 });
             }
         }
+        console.log(`DEBUG: ${teamsToProcess.length} équipes à traiter pour la phase ${selectedPhase}`);
 
         const promises = teamsToProcess.map(async (team) => {
             if (!team) return;
             const teamName = team.libequipe || team.libequ || team.libepr || team.lib || "Équipe";
             const isPhase2 = (selectedPhase !== "all") ? selectedPhase.toLowerCase().includes("phase 2") : teamName.toLowerCase().includes("phase 2");
 
+            if (teamName.includes('13') || teamName.includes('14')) {
+                console.log(`DEBUG RAW TEAM 13/14:`, team);
+            }
             let divisionLink = team.liendivision || team.liendiv || "";
             if (typeof divisionLink !== 'string') divisionLink = "";
 
             const categoryName = team.libdivision || team.libdiv || (isPhase2 ? "Phase 2" : "Phase 1");
 
             const linkParams = new URLSearchParams(divisionLink.includes('?') ? divisionLink.split('?')[1] : divisionLink);
-            const divisionId = linkParams.get('D1') || '';
-            const pouleId = linkParams.get('cx_poule') || '';
+            let divisionId = '';
+            for (const [key, value] of linkParams.entries()) {
+                if (key.match(/^D\d+$/)) {
+                    divisionId = value;
+                    break;
+                }
+            }
+            if (!divisionId) divisionId = linkParams.get('D1') || linkParams.get('D2') || linkParams.get('D3') || '';
+            const pouleId = linkParams.get('cx_poule') || linkParams.get('poule') || '';
 
-            if (!divisionId || !pouleId) return;
+            if (!divisionId || !pouleId) {
+                logDebug(`Saut de l'équipe ${teamName} : paramètres division/poule manquants.`, "warn");
+                return;
+            }
 
             const data = await fetchData('getMatches', { divisionId, pouleId });
+            console.log(`DEBUG: Equipe ${teamName}, Division: ${divisionId}, Poule: ${pouleId}, Matchs trouvés: ${data?.tour?.length || (data?.tour ? 1 : 0)}`);
 
             if (data && data.tour) {
                 const allMatchesInPoule = Array.isArray(data.tour) ? data.tour : [data.tour];
@@ -706,26 +791,81 @@ async function generateResults() {
                         const nA = norm(getVal(r.equa));
                         const nB = norm(getVal(r.equb));
                         const hasScore = (sA !== '' || sB !== '');
-                        const isOurTeam = nA.includes(targetNorm) || targetNorm.includes(nA) || 
-                                          nB.includes(targetNorm) || targetNorm.includes(nB) ||
-                                          nA.includes('villefranche') || nB.includes('villefranche');
-                        return hasScore && isOurTeam;
+                        
+                        const keywords = /ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping|vill(?:efranche)?/gi;
+                        const cleanA = nA.replace(keywords, '');
+                        const cleanB = nB.replace(keywords, '');
+                        const cleanTarget = targetNorm.replace(keywords, '');
+                        
+                        const isA = cleanA.includes(cleanTarget) || cleanTarget.includes(cleanA) || 
+                                    nA.includes('villefranche') || nA.includes('ttcav') || nA.includes('vtt') || nA.includes('villefr');
+                        const isB = cleanB.includes(cleanTarget) || cleanTarget.includes(cleanB) || 
+                                    nB.includes('villefranche') || nB.includes('ttcav') || nB.includes('vtt') || nB.includes('villefr');
+                                    
+                        return hasScore && (isA || isB);
                     });
                 } else {
                     // Match spécifique de NOTRE équipe pour cette journée
                     const targetNorm = norm(teamName);
-                    const matchFound = allMatchesInPoule.find((r) => {
-                        const tm = getVal(r.libelle).match(/tour n°\d+/i);
-                        const tExt = tm ? tm[0].toLowerCase().trim() : "";
-                        if (tExt !== selectedDayVal) return false;
-
+                    matchesToProcess = allMatchesInPoule.filter((r, idx) => {
+                        const tm = getVal(r.libelle).match(/(?:tour|journ[eé]e|barrage|titre)\s*(?:n°)?\s*\d+/i);
+                        let tExt = tm ? tm[0].toLowerCase().replace(/\s*n°\s*/, ' ').trim() : "";
+                        
+                        const mDate = getVal(r.datereelle) || getVal(r.dateprevue) || "";
+                        const refDate = state.tourDates[selectedDayVal];
+                        
                         const nA = norm(getVal(r.equa));
                         const nB = norm(getVal(r.equb));
-                        return nA.includes(targetNorm) || targetNorm.includes(nA) || 
-                               nB.includes(targetNorm) || targetNorm.includes(nB) ||
-                               nA.includes('villefranche') || nB.includes('villefranche');
+                        const keywords = /ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping|vill(?:efranche)?/gi;
+                        const cleanA = nA.replace(keywords, '');
+                        const cleanB = nB.replace(keywords, '');
+                        const cleanTarget = targetNorm.replace(keywords, '');
+                        
+                        const isOurMatch = cleanA.includes(cleanTarget) || cleanTarget.includes(cleanA) || 
+                                          cleanB.includes(cleanTarget) || cleanTarget.includes(cleanB) ||
+                                          nA.includes('villefranche') || nB.includes('villefranche') ||
+                                          nA.includes('ttcav') || nB.includes('ttcav') ||
+                                          nA.includes('vtt') || nB.includes('vtt') ||
+                                          nA.includes('villefr') || nB.includes('villefr');
+
+                        if (!isOurMatch) return false;
+
+                        let matchByDate = false;
+                        if (refDate && mDate) {
+                            // On passe à 9 jours car entre Régionale (11/04) et Départementale (18/04), il y a 7 jours d'écart
+                            // Mais on reste en dessous de 14 jours (écart entre deux tours normaux) pour éviter les doublons.
+                            matchByDate = isDateClose(mDate, refDate, 9);
+                        }
+
+                        // 1. Si la date correspond, c'est le bon tour (peu importe le libellé)
+                        if (matchByDate) {
+                            // On accepte
+                        } else {
+                            // 2. Si la date ne correspond pas mais que le libellé est exact (ex: match décalé)
+                            const matchesLibelle = (tExt === selectedDayVal);
+                            if (matchesLibelle) {
+                                // On accepte seulement si on n'a pas de date de référence ou si elle n'est pas trop délirante
+                                if (refDate && mDate && !isDateClose(mDate, refDate, 9)) return false;
+                            } else {
+                                // 3. Pas de date ni de libellé qui matche ? On tente l'index en dernier recours
+                                if (!mDate || !refDate) {
+                                    const numTour = parseInt(selectedDayVal.match(/\d+/));
+                                    if (numTour && (idx + 1) !== numTour) return false;
+                                } else {
+                                    return false; // Trop loin en date
+                                }
+                            }
+                        }
+
+                        return true;
                     });
-                    if (matchFound) matchesToProcess = [matchFound];
+                }
+                if (matchesToProcess.length > 0) {
+                    console.log(`DEBUG: Match trouvé pour ${teamName} (${selectedDayVal}):`, matchesToProcess);
+                } else {
+                    if (teamName.includes('13') || teamName.includes('14')) {
+                         console.log(`DEBUG: AUCUN MATCH trouvé pour ${teamName} au ${selectedDayVal}.`);
+                    }
                 }
 
                 matchesToProcess.forEach(matchFound => {
@@ -761,8 +901,8 @@ async function generateResults() {
                     } else if (isHome && !isAway) {
                         isHome = true;
                     } else {
-                        isHome = nA.includes('villefranche');
-                        isAway = nB.includes('villefranche');
+                        isHome = nA.includes('villefranche') || nA.includes('ttcav') || nA.includes('vtt');
+                        isAway = nB.includes('villefranche') || nB.includes('ttcav') || nB.includes('vtt');
                     }
 
                     // Sécurité : on ignore si on n'a pas trouvé Villefranche
@@ -892,19 +1032,32 @@ async function showMatchDetails(index) {
                 if (!state.playerDetailsCache) state.playerDetailsCache = {};
                 
                 for (const pj of plist) {
-                    const lic = pj.licence || '';
-                    const nomComplet = (pj.nom || '').trim();
-                    if (lic) {
-                        updateLoaderStep(`Points mensuels : ${nomComplet}...`);
-                        // On force le rafraîchissement (refresh: 1) pour être sûr d'avoir les points mensuels frais
-                        const pDet = await fetchData('getPlayerDetail', { licence: lic }, true);
+                    // Côté A
+                    const licA = pj.xla || pj.licence || '';
+                    const nomA = (pj.xja || pj.nom || '').trim();
+                    if (licA) {
+                        updateLoaderStep(`Points mensuels : ${nomA}...`);
+                        const pDet = await fetchData('getPlayerDetail', { licence: licA }, true);
                         if (pDet && pDet.joueur) {
-                            const valMensuelle = parseFloat(pDet.joueur.point || 0);
-                            state.playerDetailsCache[lic] = {
-                                points: valMensuelle,
-                                nom: nomComplet
+                            state.playerDetailsCache[licA] = {
+                                points: parseFloat(pDet.joueur.point || 0),
+                                nom: nomA
                             };
-                            logDebug(`Sync Live: ${nomComplet} (${lic}) -> ${valMensuelle}`);
+                            logDebug(`Sync Live: ${nomA} (${licA}) -> ${state.playerDetailsCache[licA].points}`);
+                        }
+                    }
+                    // Côté B
+                    const licB = pj.xlb || '';
+                    const nomB = (pj.xjb || '').trim();
+                    if (licB) {
+                        updateLoaderStep(`Points mensuels : ${nomB}...`);
+                        const pDet = await fetchData('getPlayerDetail', { licence: licB }, true);
+                        if (pDet && pDet.joueur) {
+                            state.playerDetailsCache[licB] = {
+                                points: parseFloat(pDet.joueur.point || 0),
+                                nom: nomB
+                            };
+                            logDebug(`Sync Live: ${nomB} (${licB}) -> ${state.playerDetailsCache[licB].points}`);
                         }
                     }
                 }
@@ -923,15 +1076,19 @@ async function showMatchDetails(index) {
             const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
 
             elements.exportPanel.innerHTML = `
-                <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-bottom: 1.5rem; background: #1e293b; padding: 1rem; border-radius: 8px;">
+                <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-bottom: 1.5rem; background: #1e293b; padding: 1rem; border-radius: 8px; flex-wrap: wrap;">
+                    <button onclick="restoreSavedPlayerPoints()" style="background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;"><i class="fas fa-undo"></i> Restaurer (modif. manuelle)</button>
+                    <button onclick="resetPlayerPointsFromAPI('mensuel')" style="background: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;"><i class="fas fa-calendar-alt"></i> Restaurer (Pts Mensuels)</button>
+                    <button onclick="resetPlayerPointsFromAPI('officiel')" style="background: #ef4444; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600;"><i class="fas fa-award"></i> Restaurer (Pts Officiels)</button>
                     <button onclick="copyWPHTMLToClipboard()" style="background: #eab308; color: white; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 700;">📋 Copier HTML (Gutenberg)</button>
                     <button onclick="document.getElementById('export-container').style.display='none'" style="background: #e2e8f0; color: #475569; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer;">✕ Fermer</button>
                 </div>
-                ${getMatchDetailsHTML(res, data, false, rankingData)}
+                ${getMatchDetailsHTML(res, data, false, rankingData, dataPlayers)}
             `;
             // On prépare aussi la version brute pour le bouton copier
-            state.giantHTMLRaw = getMatchDetailsHTML(res, data, true, rankingData);
+            state.giantHTMLRaw = getMatchDetailsHTML(res, data, true, rankingData, dataPlayers);
             // Affichage identique à l'ancienne version fonctionnelle
+            state.currentMatchResIndex = resIndex;
             elements.exportContainer.style.cssText = "display: block; position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: 5000; background: rgba(0,0,0,0.8); overflow-y: auto; padding: 40px 20px;";
             elements.exportPanel.style.cssText = "display: block; margin: 0 auto; background: white; max-width: 1000px; padding: 40px; border-radius: 12px; position: relative;";
 
@@ -952,7 +1109,7 @@ async function showMatchDetails(index) {
 }
 
 // ===== GENERATION HTML DETAIL =====
-function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) {
+function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, playersRoster = null) {
     try {
         const p = details.resultat;
         if (!p) throw new Error("Données de match absentes (resultat manquant)");
@@ -962,6 +1119,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         const summaryLabel = `Bilan ${currentPhaseText}`;
 
         const nameCache = JSON.parse(localStorage.getItem('ttcav_names_cache_v4') || '{}');
+        const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
 
         // Détection ultra-robuste locale pour contrer les inversions de l'API FFTT entre la liste et le détail
         const clean = (s) => norm(s).replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '').replace(/\s+/g, '');
@@ -1080,26 +1238,53 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             let pA_raw = parseClassement(j.xca || '');
             let pB_raw = parseClassement(j.xcb || '');
             
-            const mPtsA_raw = getMonthlyPoints(nA_raw, j.xla || j.licence); 
-            const mPtsB_raw = getMonthlyPoints(nB_raw, j.xlb); 
+            // Tentative de récupération des licences si absentes (via roster)
+            let licA = j.xla || j.licence;
+            let licB = j.xlb;
+
+            if (playersRoster && playersRoster.joueur) {
+                const plist = Array.isArray(playersRoster.joueur) ? playersRoster.joueur : [playersRoster.joueur];
+                const snA = norm(nA_raw);
+                const snB = norm(nB_raw);
+                if (!licA) {
+                    const found = plist.find(pj => norm(pj.xja || pj.nom || '') === snA);
+                    if (found) licA = found.xla || found.licence;
+                }
+                if (!licB) {
+                    const found = plist.find(pj => norm(pj.xjb || pj.nom || '') === snB);
+                    if (found) licB = found.xlb || found.licence;
+                }
+            }
+
+            const mPtsA_raw = getMonthlyPoints(nA_raw, licA); 
+            const mPtsB_raw = getMonthlyPoints(nB_raw, licB); 
 
             let isCapA_raw = nA_raw.toLowerCase().includes(' cap') || j.xca === 'cap' || j.capa === '1';
             let isCapB_raw = nB_raw.toLowerCase().includes(' cap') || j.xcb === 'cap' || j.capb === '1';
             
+            const nA_clean = nA_raw.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim();
+            const nB_clean = nB_raw.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim();
+            
+            let customA = state.customPlayerPoints && state.customPlayerPoints[nA_clean];
+            let customB = state.customPlayerPoints && state.customPlayerPoints[nB_clean];
+            
+            let baseA = state.apiPointsMode === 'officiel' ? pA_raw.raw : (mPtsA_raw || pA_raw.raw);
+            let baseB = state.apiPointsMode === 'officiel' ? pB_raw.raw : (mPtsB_raw || pB_raw.raw);
+
             const pA = { 
-                nom: nA_raw.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim(), 
+                nom: nA_clean, 
                 classement: pA_raw.text || '', 
                 mensuel: mPtsA_raw, 
                 rawPoints: pA_raw.raw, 
-                calcPoints: mPtsA_raw || pA_raw.raw, 
+                calcPoints: customA !== undefined ? customA : baseA, 
                 isCap: isCapA_raw 
             };
             const pB = { 
-                nom: nB_raw.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim(), 
+                nom: nB_clean, 
                 classement: pB_raw.text || '', 
                 mensuel: mPtsB_raw, 
                 rawPoints: pB_raw.raw, 
-                calcPoints: mPtsB_raw || pB_raw.raw, 
+                calcPoints: customB !== undefined ? customB : baseB, 
                 isCap: isCapB_raw 
             };
 
@@ -1123,11 +1308,15 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             });
             jouas = Array.from(tempA).map(nom => {
                 const m = getMonthlyPoints(nom);
-                return { nom, classement: '', mensuel: m, rawPoints: m || 0, calcPoints: m || 0, isCap: false };
+                let custom = state.customPlayerPoints && state.customPlayerPoints[nom];
+                let base = state.apiPointsMode === 'officiel' ? 0 : (m || 0);
+                return { nom, classement: '', mensuel: m, rawPoints: m || 0, calcPoints: custom !== undefined ? custom : base, isCap: false };
             });
             joubs = Array.from(tempB).map(nom => {
                 const m = getMonthlyPoints(nom);
-                return { nom, classement: '', mensuel: m, rawPoints: m || 0, calcPoints: m || 0, isCap: false };
+                let custom = state.customPlayerPoints && state.customPlayerPoints[nom];
+                let base = state.apiPointsMode === 'officiel' ? 0 : (m || 0);
+                return { nom, classement: '', mensuel: m, rawPoints: m || 0, calcPoints: custom !== undefined ? custom : base, isCap: false };
             });
         }
 
@@ -1135,8 +1324,13 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         joubs.forEach(j => { equipeBPoints += j.calcPoints || 0; });
 
         // ===== TABLE DE COMPOSITION =====
+        let compoTitleHTML = `<div class="section-title" style="display:flex; justify-content:center; align-items:center; gap: 10px;">
+            La composition des équipes
+            ${!isBatch ? `<button onclick="openPointsEditorModal('${matchID}')" class="btn-sync-mini" title="Édition rapide des points" style="background:#eab308; color:#fff; border:none; width: 24px; height: 24px; border-radius:50%; cursor:pointer;"><i class="fas fa-pen"></i></button>` : ''}
+        </div>`;
+        
         let compoHTML = `
-        <div class="section-title">La composition des équipes</div>
+        ${compoTitleHTML}
         <table class="premium-table">
             <thead><tr><th class="col-header-large">${equipeA}</th><th class="col-header-large">${equipeB}</th></tr></thead>
             <tbody>
@@ -1147,9 +1341,6 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             if (jouas[i]) {
                 const j = jouas[i];
                 let nomHTML = j.isCap ? `<b>${j.nom}</b>` : j.nom;
-                // On cache la parenthèse si le mensuel est égal à l'officiel
-                const mPtsStr = (j.mensuel && Math.round(j.mensuel) !== Math.round(j.rawPoints)) ? ` (${Math.round(j.mensuel)})` : '';
-                
                 let clastStr = (j.classement || '').trim();
                 const ptsOff = Math.floor(j.rawPoints);
                 
@@ -1163,31 +1354,28 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
                 }
                 
                 const sep = clastStr ? ' - ' : '';
-                const displayPoints = `${clastStr}${sep}${ptsOff}${mPtsStr}`;
-                htmlA = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPoints}</span></div>`;
+                const displayPointsHTML = `${clastStr}${sep}${Math.round(j.calcPoints)}`;
+                htmlA = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPointsHTML}</span></div>`;
             }
             let htmlB = '';
             if (joubs[i]) {
                 const j = joubs[i];
                 let nomHTML = j.isCap ? `<b>${j.nom}</b>` : j.nom;
-                // On cache la parenthèse si le mensuel est égal à l'officiel
-                const mPtsStr = (j.mensuel && Math.round(j.mensuel) !== Math.round(j.rawPoints)) ? ` (${Math.round(j.mensuel)})` : '';
-                
                 let clastStr = (j.classement || '').trim();
                 const ptsOff = Math.floor(j.rawPoints);
 
                 clastStr = clastStr.replace(/\s*\(\s*(n°\d+)\s*\).*/i, '$1'); 
                 clastStr = clastStr.replace(/\s*[nN]°\s*(\d+).*/i, 'n°$1');
-
+                
                 if (clastStr && clastStr.match(/^\d+$/)) {
                     const numClast = parseInt(clastStr);
-                    if (numClast === ptsOff || numClast > 3000) clastStr = '';
-                    else if (numClast > 30) clastStr = 'n°' + clastStr;
+                    if (numClast === ptsOff || numClast > 3000) clastStr = ''; 
+                    else if (numClast > 30) clastStr = 'n°' + clastStr; 
                 }
 
                 const sep = clastStr ? ' - ' : '';
-                const displayPoints = `${clastStr}${sep}${ptsOff}${mPtsStr}`;
-                htmlB = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPoints}</span></div>`;
+                const displayPointsHTML = `${clastStr}${sep}${Math.round(j.calcPoints)}`;
+                htmlB = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPointsHTML}</span></div>`;
             }
             compoHTML += `<tr><td class="col-player">${htmlA}</td><td class="col-player">${htmlB}</td></tr>`;
         }
@@ -1575,10 +1763,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         </div>
 `;
 
-        // Clean matchID for consistency
-        const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
-
-        // Sauvegarder les données pour l'IA (Registre)
+        // Sauvegarder les données pour l'IA (Registre) et l'éditeur de points
         const mData = {
             teamA: equipeA,
             teamB: equipeB,
@@ -1587,7 +1772,9 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             category: res.category,
             stats: stats,
             isHome: isActuallyHome,
-            ourTeamName: res.teamName
+            ourTeamName: res.teamName,
+            jouas: jouas,
+            joubs: joubs
         };
         state.matchDataRegistry[matchID] = mData;
         state.currentMatchData = mData;
@@ -1657,10 +1844,10 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
         if (isBatch) {
             // WordPress BLOCK MODE
             // 1. Titre (Heading Block) - Inclut les 2 équipes et le VS stylisé (CENTRÉ)
-            const wpTitle = `<!-- wp:heading {"textAlign":"center","level":1,"className":"ttcav-wp-main-title","anchor":"anchor-${matchID}"} -->\n<h1 id="anchor-${matchID}" class="has-text-align-center ttcav-wp-main-title">${equipeA}<span class="ttcav-wp-vs">VS</span>${equipeB}</h1>\n<!-- /wp:heading -->`;
+            const wpTitle = `<!-- wp:heading {"textAlign":"center","level":1,"className":"ttcav-wp-main-title","anchor":"anchor-${matchID}"} -->\n<h1 id="anchor-${matchID}" class="has-text-align-center ttcav-wp-main-title">${equipeA} <span class="ttcav-wp-vs">VS</span> ${equipeB}</h1>\n<!-- /wp:heading -->`;
 
             // 2. Sous-titre et Scoreboard
-            const wpHeader = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n<div class="export-subtitle">${res.category}</div>\n${scoreboardHTML}\n</div>\n<!-- /wp:html -->`;
+            const wpHeader = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n<div class="export-subtitle">${res.category} <span class="export-match-date">(${res.date})</span></div>\n${scoreboardHTML}\n</div>\n<!-- /wp:html -->`;
 
             // 3. Résumé IA (Paragraph Block) (CENTRÉ)
             const summaryText = state.aiSummaries[matchID] || '<em>Génération du résumé...</em>';
@@ -1691,7 +1878,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null) 
             <div class="match-detail-block" id="anchor-${matchID}">
                 <div class="export-header" style="text-align:center;">
                     <h1 class="ttcav-wp-main-title">${equipeA}<span class="ttcav-wp-vs">VS</span>${equipeB}</h1>
-                    <div class="export-subtitle" style="margin-top: 1.5rem;">${res.category}</div>
+                    <div class="export-subtitle" style="margin-top: 1.5rem;">${res.category} <span class="export-match-date">(${res.date})</span></div>
                     ${appPhotoHTML}
                     ${scoreboardHTML}
                 </div>
@@ -1868,7 +2055,7 @@ function copyWPHTMLToClipboard() {
 
 
 // ===== EXPORT GLOBAL (TOUS LES MATCHS) =====
-async function copyAllMatchesToWordPress() {
+async function copyAllMatchesToWordPress(forceRefresh = false) {
     if (state.results.length === 0) return showToast('Générez d\'abord les résultats.', true);
 
     setAppBusy(true);
@@ -1902,13 +2089,16 @@ async function copyAllMatchesToWordPress() {
     const originalText = elements.loaderText.textContent;
     let giantHTML = `
         <div class="ttcav-export-global">
-        <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; align-items: center; margin-bottom: 2rem; position: sticky; top: 0; background: #1e293b; padding: 1rem; z-index: 100; border-radius: 0 0 12px 12px;">
-            <div id="ai-progress-container" style="flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 10px;">
+        <div class="export-actions" style="display: flex; gap: 0.75rem; justify-content: flex-end; align-items: center; margin-bottom: 2rem; position: sticky; top: 0; background: #1e293b; padding: 1rem; z-index: 100; border-radius: 0 0 12px 12px; flex-wrap: wrap;">
+            <div id="ai-progress-container" style="flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 10px; min-width: 200px;">
                 <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
                     <div id="ai-progress-fill" style="width: 0%; height: 100%; background: #eab308; transition: width 0.3s;"></div>
                 </div>
                 <span id="ai-progress-text" style="font-size: 0.75rem; color: #94a3b8; font-weight: 600; min-width: 100px;">Résumés IA : 0%</span>
             </div>
+            <button onclick="restoreSavedPlayerPoints()" style="background: #3b82f6; color: white; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600;"><i class="fas fa-undo"></i> Restaurer (modif. manuelle)</button>
+            <button onclick="resetPlayerPointsFromAPI('mensuel')" style="background: #10b981; color: white; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600;"><i class="fas fa-calendar-alt"></i> Restaurer (Pts Mensuels)</button>
+            <button onclick="resetPlayerPointsFromAPI('officiel')" style="background: #ef4444; color: white; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600;"><i class="fas fa-award"></i> Restaurer (Pts Officiels)</button>
             <button onclick="copyWPHTMLToClipboard()" style="background: #eab308; color: white; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 700;">📋 Copier HTML</button>
             <button onclick="document.getElementById('export-container').style.display='none'" class="secondary" style="background: #e2e8f0; border: none; padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer;">✕ Fermer</button>
         </div>
@@ -1928,15 +2118,39 @@ async function copyAllMatchesToWordPress() {
             const is_retour = linkParams.get('is_retour') || '0';
             const renc_id = linkParams.get('renc_id') || linkParams.get('res_id') || '';
 
-            const [detailsData, classData] = await Promise.all([
-                fetchData('getMatchDetails', { is_retour, renc_id }),
-                res.divisionId && res.pouleId ? fetchData('getClassement', { divisionId: res.divisionId, pouleId: res.pouleId }) : Promise.resolve(null)
+            const [detailsData, classData, dataPlayers] = await Promise.all([
+                fetchData('getMatchDetails', { is_retour, renc_id }, forceRefresh),
+                res.divisionId && res.pouleId ? fetchData('getClassement', { divisionId: res.divisionId, pouleId: res.pouleId }, forceRefresh) : Promise.resolve(null),
+                fetchData('getMatchPlayers', { renc_id }, forceRefresh)
             ]);
+
+            // Récupérer les détails individuels pour avoir les points mensuels exacts (<point>)
+            if (dataPlayers && dataPlayers.joueur) {
+                const plist = Array.isArray(dataPlayers.joueur) ? dataPlayers.joueur : [dataPlayers.joueur];
+                if (!state.playerDetailsCache) state.playerDetailsCache = {};
+                for (const pj of plist) {
+                    const processPlayer = async (lic, nom) => {
+                        if (lic && (!state.playerDetailsCache[lic] || forceRefresh)) {
+                            try {
+                                const pDet = await fetchData('getPlayerDetail', { licence: lic }, forceRefresh);
+                                if (pDet && pDet.joueur) {
+                                    state.playerDetailsCache[lic] = {
+                                        points: parseFloat(pDet.joueur.point || 0),
+                                        nom: nom
+                                    };
+                                }
+                            } catch (e) { /* ignore */ }
+                        }
+                    };
+                    await processPlayer(pj.xla || pj.licence || '', (pj.xja || pj.nom || '').trim());
+                    await processPlayer(pj.xlb || '', (pj.xjb || '').trim());
+                }
+            }
 
             loadedCount++;
             updateLoaderStep(`Chargement des données (${loadedCount}/${state.results.length}) : <br><b>${res.teamName}</b>`);
 
-            return { res, detailsData, classData };
+            return { res, detailsData, classData, dataPlayers };
         });
 
         const allResults = await Promise.all(allDataPromises);
@@ -2052,11 +2266,11 @@ async function copyAllMatchesToWordPress() {
             return numA - numB;
         });
 
-        allResults.forEach(({ res, detailsData, classData }) => {
+        allResults.forEach(({ res, detailsData, classData, dataPlayers }) => {
             if (detailsData && detailsData.resultat) {
-                const detailBlock = getMatchDetailsHTML(res, detailsData, false, classData);
+                const detailBlock = getMatchDetailsHTML(res, detailsData, false, classData, dataPlayers);
                 giantHTML += detailBlock;
-                state.giantHTMLRaw += getMatchDetailsHTML(res, detailsData, true, classData);
+                state.giantHTMLRaw += getMatchDetailsHTML(res, detailsData, true, classData, dataPlayers);
             }
         });
 
@@ -2133,346 +2347,276 @@ async function copyAllMatchesToWordPress() {
 }
 
 function getWordPressCSS() {
-    return `/* --- TTCAV WP STYLES - COPIER DANS PERSONNALISER > CSS ADDITIONNEL --- */
+    return `/* --- TTCAV WP STYLES - HESTIA PREMIUM --- */
 
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&family=Inter:wght@400;500;600&display=swap');
 
-/* Utilitaires de Centrage */
-.has-text-align-center {
-    text-align: center !important;
+/* RESET ET POLICES GLOBALES (HAUTE SPÉCIFICITÉ) */
+.ttcav-export-wrapper, 
+.ttcav-export-wrapper *,
+.ttcav-wp-main-title,
+.ttcav-wp-ai,
+.ttcav-wp-ai * {
+    font-family: 'Inter', sans-serif !important;
+    box-sizing: border-box !important;
 }
 
-.aligncenter {
-    display: block !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    text-align: center !important;
-}
-
-/* Conteneur Global */
-.ttcav-export-wrapper {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-    max-width: 1000px !important;
-    margin: 60px auto !important;
-    color: #1e293b !important;
-    line-height: 28px !important;
-    padding: 0 20px !important;
-    text-align: center !important;
-    display: block !important;
-}
-
-/* Titre Principal - Bypass Styles WP/Hestia */
-.ttcav-wp-main-title {
+/* TITRE PRINCIPAL (Même hors wrapper) */
+h1.ttcav-wp-main-title,
+.ttcav-export-wrapper .ttcav-wp-main-title {
     font-family: 'Outfit', sans-serif !important;
-    font-size: 48px !important;
+    font-size: clamp(28px, 5vw, 42px) !important;
     font-weight: 800 !important;
     text-align: center !important;
     text-transform: uppercase !important;
     color: #1e293b !important;
-    margin: 60px auto 10px auto !important;
-    line-height: 52px !important;
+    margin: 60px auto 30px auto !important;
+    line-height: 1.2 !important;
     letter-spacing: -1px !important;
+    border: none !important;
     display: block !important;
+    width: 100% !important;
+}
+
+/* LE "VS" STYLISÉ */
+.ttcav-wp-vs {
+    display: inline-block !important;
+    background: #eab308 !important;
+    color: #ffffff !important;
+    padding: 2px 12px !important;
+    border-radius: 4px !important;
+    margin: 0 15px !important;
+    font-size: 0.6em !important;
+    vertical-align: middle !important;
+    letter-spacing: 2px !important;
+    font-style: normal !important;
+}
+
+/* SOUS-TITRE */
+.ttcav-export-wrapper .export-subtitle {
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    color: #64748b !important;
+    text-align: center !important;
+    text-transform: uppercase !important;
+    letter-spacing: 2px !important;
+    margin-bottom: 30px !important;
+}
+
+.ttcav-export-wrapper .export-match-date {
+    color: #94a3b8 !important;
+    font-weight: 500 !important;
+}
+
+/* RÉSUMÉ IA */
+p.ttcav-wp-ai,
+.ttcav-export-wrapper .ttcav-wp-ai {
+    background: #f8fafc !important;
+    border-left: 4px solid #8b5cf6 !important;
+    padding: 25px !important;
+    margin: 40px auto !important;
+    font-size: 17px !important;
+    line-height: 1.8 !important;
+    color: #334155 !important;
+    font-style: italic !important;
+    max-width: 850px !important;
+    border-radius: 0 12px 12px 0 !important;
+}
+
+/* TABLES PREMIUM */
+.ttcav-export-wrapper .premium-table {
+    width: 100% !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    margin: 30px auto !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Forcer les coins arrondis sur les cellules de coin */
+.ttcav-export-wrapper .premium-table tr:first-child th:first-child { border-top-left-radius: 12px !important; }
+.ttcav-export-wrapper .premium-table tr:first-child th:last-child { border-top-right-radius: 12px !important; }
+.ttcav-export-wrapper .premium-table tr:last-child td:first-child { border-bottom-left-radius: 12px !important; }
+.ttcav-export-wrapper .premium-table tr:last-child td:last-child { border-bottom-right-radius: 12px !important; }
+
+.ttcav-export-wrapper .premium-table th {
+    background: #1e293b !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    padding: 16px !important;
+    font-size: 14px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+    text-align: center !important;
     border: none !important;
 }
 
-/* VS Stylisé */
-.ttcav-wp-vs {
-    font-family: 'Outfit', sans-serif !important;
-    font-size: 18px !important;
+/* Bordure entre les colonnes de composition */
+.ttcav-export-wrapper .premium-table th:first-child,
+.ttcav-export-wrapper .premium-table td:first-child {
+    border-right: 1px solid #e2e8f0 !important;
+}
+
+.ttcav-export-wrapper .premium-table td {
+    padding: 14px 20px !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    font-size: 15px !important;
+    color: #1e293b !important;
+    vertical-align: middle !important;
+}
+
+/* Zébrure des lignes */
+.ttcav-export-wrapper .premium-table tbody tr:nth-child(even) {
+    background-color: #f8fafc !important;
+}
+
+/* Footer de table (Total) */
+.ttcav-export-wrapper .compo-total-row td {
+    background: #f1f5f9 !important;
     font-weight: 800 !important;
-    text-align: center !important;
-    color: #eab308 !important;
-    margin: 25px 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+    color: #475569 !important;
     text-transform: uppercase !important;
-    letter-spacing: 6px !important;
-}
-
-.ttcav-wp-vs::before, .ttcav-wp-vs::after {
-    content: "" !important;
-    flex: 1 !important;
-    height: 1px !important;
-    background: #e2e8f0 !important;
-    margin: 0 30px !important;
-}
-
-.export-subtitle {
-    font-family: 'Outfit', sans-serif !important;
-    font-size: 20px !important;
-    font-weight: 700 !important;
-    color: #94a3b8 !important;
-    text-align: center !important;
-    text-transform: uppercase !important;
-    letter-spacing: 3px !important;
-    margin-bottom: 40px !important;
-    display: block !important;
+    font-size: 13px !important;
+    border-top: 2px solid #e2e8f0 !important;
 }
 
 /* Scoreboard */
-.premium-scoreboard {
+.ttcav-export-wrapper .premium-scoreboard {
     display: flex !important;
     justify-content: center !important;
     align-items: center !important;
     gap: 15px !important;
     background: #1e293b !important;
-    padding: 24px 34px !important;
-    border-radius: 20px !important;
+    padding: 25px !important;
+    border-radius: 16px !important;
     width: fit-content !important;
     margin: 40px auto !important;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2) !important;
 }
 
-.score-digit-box {
+.ttcav-export-wrapper .score-digit-box {
     background: #ffffff !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
     font-weight: 800 !important;
     font-family: 'Outfit', sans-serif !important;
-    border-radius: 10px !important;
-    box-shadow: 0 4px 0 rgba(0,0,0,0.1) !important;
+    border-radius: 8px !important;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1) !important;
 }
+.ttcav-export-wrapper .score-box-small { width: 45px !important; height: 55px !important; font-size: 26px !important; }
+.ttcav-export-wrapper .score-box-large { width: 75px !important; height: 90px !important; font-size: 48px !important; }
+.ttcav-export-wrapper .digit-red { color: #ef4444 !important; }
+.ttcav-export-wrapper .digit-black { color: #1e293b !important; }
 
-.score-box-small {
-    width: 48px !important;
-    height: 60px !important;
-    font-size: 28px !important;
-}
+/* Status Victoire/Défaite */
+.ttcav-export-wrapper .status-victoire { color: #10b981 !important; font-weight: 800 !important; }
+.ttcav-export-wrapper .status-defaite { color: #ef4444 !important; font-weight: 800 !important; }
+.ttcav-export-wrapper .status-nul { color: #f59e0b !important; font-weight: 800 !important; }
 
-.score-box-large {
-    width: 75px !important;
-    height: 90px !important;
-    font-size: 50px !important;
-}
+.ttcav-export-wrapper .player-win { font-weight: 700 !important; color: #0f172a !important; }
+.ttcav-export-wrapper .player-loss { color: #94a3b8 !important; }
 
-.score-divider {
-    width: 2px !important;
-    height: 30px !important;
-    background: rgba(255, 255, 255, 0.1) !important;
-}
-
-.digit-red { color: #ef4444 !important; }
-.digit-black { color: #1e293b !important; }
-
-.ttcav-wp-ai {
-    background: #f8fafc !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 16px !important;
-    padding: 25px 35px !important;
-    margin: 30px auto 50px auto !important;
-    font-size: 16px !important;
-    line-height: 26px !important;
-    color: #334155 !important;
-    position: relative !important;
-    text-align: center !important;
-    display: block !important;
-    max-width: 850px !important;
-    font-style: italic !important;
-}
-
-.section-title {
+/* Autres éléments */
+.ttcav-export-wrapper .section-title {
     font-family: 'Outfit', sans-serif !important;
-    text-align: center !important;
-    font-size: 18px !important;
-    font-weight: 700 !important;
-    color: #94a3b8 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 3px !important;
-    margin: 50px auto 25px auto !important;
-    display: block !important;
-}
-
-.ttcav-export-wrapper, .ttcav-export-global {
-    font-size: 18px !important;
-    line-height: 1.6 !important;
-}
-
-/* Tables */
-.premium-table {
-    width: 100% !important;
-    border-collapse: separate !important;
-    border-spacing: 0 !important;
-    margin: 25px auto 35px auto !important;
-    border-radius: 12px !important;
-    overflow: hidden !important;
-    border: 1px solid #e2e8f0 !important;
-    background: #ffffff !important;
-    display: table !important;
-    table-layout: auto !important;
-}
-
-.premium-table th {
-    background: #f8fafc !important;
-    color: #64748b !important;
-    font-weight: 700 !important;
-    padding: 12px 15px !important;
-    text-align: left !important;
-    font-size: 13px !important;
-    text-transform: uppercase !important;
-    border-bottom: 1px solid #f1f5f9 !important;
-    border-right: 1px solid #f1f5f9 !important;
-}
-
-.premium-table td {
-    padding: 12px 15px !important;
-    border-bottom: 1px solid #f1f5f9 !important;
-    border-right: 1px solid #f1f5f9 !important;
-    font-size: 15px !important;
-    text-align: left !important;
+    font-size: 22px !important;
+    font-weight: 800 !important;
     color: #1e293b !important;
-}
-
-.premium-table tr:last-child td { border-bottom: none !important; }
-.premium-table th:last-child, .premium-table td:last-child { border-right: none !important; }
-
-/* Spécificités Colonnes */
-.col-header-large { 
-    padding: 1.5rem !important; 
-    font-size: 20px !important; 
-    text-align: center !important; 
-    width: 50% !important;
-}
-
-.col-player { 
-    width: 35% !important; 
-    white-space: nowrap !important;
-}
-.col-set { width: 8% !important; text-align: center !important; color: #64748b !important; font-size: 12px !important; min-width: 45px !important; }
-.col-score { width: 12% !important; text-align: center !important; }
-.col-pts-diff { width: 8% !important; text-align: center !important; }
-
-.mobile-br {
-    display: none !important;
-}
-
-/* Status & Badges */
-.badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 4px 12px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 14px !important; }
-.badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 4px 12px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 14px !important; }
-
-.status-victoire { color: #10b981 !important; font-weight: 700 !important; }
-.status-defaite { color: #ef4444 !important; font-weight: 700 !important; }
-.status-nul { color: #f59e0b !important; font-weight: 700 !important; }
-
-.pts-pos { color: #10b981 !important; font-weight: 700 !important; }
-.pts-neg { color: #ef4444 !important; font-weight: 700 !important; }
-.pts-neu { color: #94a3b8 !important; }
-
-.player-win { font-weight: 800 !important; color: #1e293b !important; }
-.player-loss { font-weight: 400 !important; color: #94a3b8 !important; }
-
-/* Compositions */
-.compo-player-box { display: flex !important; justify-content: space-between !important; width: 100% !important; gap: 10px !important; }
-.compo-total-row td { background: #f1f5f9 !important; font-weight: 700 !important; font-size: 14px !important; color: #475569 !important; text-align: center !important; text-transform: uppercase !important; padding: 15px !important; }
-
-/* Résumés */
-.match-sets-sum {
-    text-align: center !important;
-    background: #f8fafc !important;
-    color: #94a3b8 !important;
-    padding: 20px !important;
-    border-radius: 10px !important;
-    font-weight: 700 !important;
-    font-size: 14px !important;
-    margin: 30px auto !important;
-    border: 1px dashed #cbd5e1 !important;
     text-transform: uppercase !important;
-    letter-spacing: 1px !important;
+    margin: 60px 0 25px 0 !important;
+    text-align: center !important;
 }
 
-.summary-footer {
-    padding: 2.5rem !important;
-    font-size: 1.5rem !important;
+.ttcav-export-wrapper .summary-totals-card {
+    background: #1e293b !important;
+    color: #ffffff !important;
+    padding: 25px !important;
+    border-radius: 12px !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 800 !important;
+    font-size: 24px !important;
+    text-align: center !important;
+    margin: 40px 0 !important;
+}
+
+.ttcav-export-wrapper .match-sets-sum {
+    text-align: center !important;
+    font-weight: 600 !important;
+    color: #64748b !important;
+    margin: 20px 0 !important;
+    font-size: 15px !important;
+}
+
+.ttcav-export-wrapper .summary-footer {
+    background: #f8fafc !important;
+    padding: 30px !important;
+    border-radius: 12px !important;
+    border: 2px solid #e2e8f0 !important;
+    font-size: 26px !important;
     font-weight: 800 !important;
     color: #1e293b !important;
     text-align: center !important;
-    background: #f8fafc !important;
-    border-radius: 12px !important;
-    margin: 3rem 0 2rem 0 !important;
+    margin: 50px 0 !important;
     text-transform: uppercase !important;
-    letter-spacing: 1px !important;
 }
 
-/* Tableau Récapitulatif */
-.summary-row { cursor: pointer !important; transition: background 0.2s !important; }
-.summary-row:hover { background: #f8fafc !important; }
-.summary-row td { padding: 12px 15px !important; border-bottom: 1px solid #f1f5f9 !important; font-size: 15px !important; }
-.summary-row a { text-decoration: none !important; color: inherit !important; display: block !important; }
-
-.col-summary-cat { color: #94a3b8 !important; font-size: 14px !important; }
-.col-summary-home { text-align: right !important; }
-.col-summary-score { text-align: center !important; font-weight: 700 !important; background: #f8fafc !important; }
-.col-summary-away { text-align: left !important; }
-.col-summary-status { text-align: center !important; text-transform: uppercase !important; font-size: 14px !important; }
-
-.summary-totals-card { 
-    margin-top: 25px !important; 
-    text-align: center !important; 
-    font-family: 'Outfit', sans-serif !important; 
-    font-weight: 700 !important; 
-    color: #64748b !important; 
-    font-size: 20px !important; 
-    background: #f8fafc !important; 
-    padding: 2.5rem !important; 
-    border-radius: 12px !important; 
-    border: 1px solid #e2e8f0 !important; 
+/* RESPONSIVE */
+@media (max-width: 768px) {
+    h1.ttcav-wp-main-title { font-size: 26px !important; }
+    .ttcav-export-wrapper .premium-table { font-size: 13px !important; }
+    .ttcav-export-wrapper .premium-table td, 
+    .ttcav-export-wrapper .premium-table th { padding: 10px 8px !important; }
+    .ttcav-export-wrapper .score-box-large { width: 55px !important; height: 70px !important; font-size: 34px !important; }
 }
-.total-v { color: #10b981 !important; margin-left: 10px !important; }
-.total-n { color: #eab308 !important; }
-.total-d { color: #ef4444 !important; }
 
-/* Classement */
-.ranking-row-us { background: #f0f9ff !important; font-weight: 800 !important; color: #1e293b !important; }
-.ranking-top-box { 
-    background: white !important; 
-    border: 1px solid #e2e8f0 !important; 
-    border-radius: 12px !important; 
-    padding: 1.5rem !important; 
+/* BOX CLASSEMENT */
+.ttcav-export-wrapper .ranking-top-box { 
     display: flex !important; 
     justify-content: space-between !important; 
-    align-items: center !important; 
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important; 
-    margin-bottom: 1rem !important; 
+    gap: 15px !important; 
+    margin: 30px 0 !important; 
 }
-.ranking-box-label { font-size: 0.85rem !important; color: #64748b !important; text-transform: uppercase !important; font-weight: 700 !important; }
-.ranking-box-val { font-size: 1.5rem !important; font-weight: 800 !important; color: #1e293b !important; }
-
-.val-v { color: #10b981 !important; }
-.val-n { color: #64748b !important; }
-.val-d { color: #ef4444 !important; }
-
-/* Séparateur de match */
-.match-separator { height: 1px !important; background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important; margin: 100px auto !important; max-width: 600px !important; position: relative !important; border: none !important; }
-.match-separator::after { content: "◈" !important; position: absolute !important; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%) !important; background: white !important; padding: 0 15px !important; color: #94a3b8 !important; font-size: 18px !important; }
-
-/* Ancres */
-[id^="anchor-"], #summary-top { scroll-margin-top: 100px !important; }
-
-/* Bouton Back to Top */
-.back-to-top-wrapper { text-align: center !important; margin: 60px 0 !important; }
-.back-to-top-btn { 
-    color: #1e293b !important; 
-    text-decoration: none !important; 
-    font-weight: 800 !important; 
-    font-size: 1.1rem !important; 
-    border: 2px solid #e2e8f0 !important; 
-    padding: 12px 30px !important; 
-    border-radius: 50px !important; 
+.ttcav-export-wrapper .ranking-box-item { 
     background: #f8fafc !important; 
-    display: inline-block !important; 
+    padding: 20px !important; 
+    border-radius: 12px !important; 
+    flex: 1 !important; 
+    text-align: center !important; 
+    border: 1px solid #e2e8f0 !important;
 }
+.ttcav-export-wrapper .ranking-box-label { font-size: 13px !important; font-weight: 700 !important; color: #64748b !important; text-transform: uppercase !important; margin-bottom: 5px !important; }
+.ttcav-export-wrapper .ranking-box-val { font-size: 20px !important; font-weight: 800 !important; color: #1e293b !important; }
 
-@media (max-width: 768px) {
-    .ttcav-wp-main-title { font-size: 32px !important; line-height: 36px !important; }
-    .ttcav-export-wrapper { padding: 0 10px !important; }
-    .premium-table th, .premium-table td { font-size: 11px !important; padding: 8px 5px !important; }
-    .col-header-large { font-size: 16px !important; padding: 1rem !important; }
-    .premium-scoreboard { transform: scale(0.85) !important; margin: 1.5rem auto !important; }
-    .summary-totals-card { font-size: 16px !important; padding: 1.5rem !important; }
-    .col-player { white-space: normal !important; }
-    .mobile-br { display: inline !important; }
+.ttcav-export-wrapper .val-v { color: #10b981 !important; }
+.ttcav-export-wrapper .val-n { color: #64748b !important; }
+.ttcav-export-wrapper .val-d { color: #ef4444 !important; }
+
+/* SEPARATEUR ET ANCRES */
+.ttcav-export-wrapper .match-separator { 
+    height: 1px !important; 
+    background: #cbd5e1 !important; 
+    margin: 80px auto !important; 
+    max-width: 400px !important; 
+    border: none !important; 
+}
+[id^="anchor-"], #summary-top { scroll-margin-top: 120px !important; }
+
+/* BOUTON RETOUR */
+.ttcav-export-wrapper .back-to-top-wrapper { text-align: center !important; margin: 40px 0 !important; }
+.ttcav-export-wrapper .back-to-top-btn { 
+    display: inline-block !important;
+    background: #f1f5f9 !important;
+    color: #1e293b !important;
+    padding: 12px 25px !important;
+    border-radius: 50px !important;
+    text-decoration: none !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+    border: 1px solid #e2e8f0 !important;
 }
 `;
 }
@@ -3380,3 +3524,150 @@ window.loadPlayerHistory = async function (licence) {
         setAppBusy(false);
     }
 };
+
+// ===== GESTION ÉDITION DES POINTS EN DIRECT =====
+window.openPointsEditorModal = function(matchID) {
+    const mData = state.matchDataRegistry[matchID];
+    if (!mData) return;
+
+    // Créer la modale si elle n'existe pas
+    let modal = document.getElementById('points-editor-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'points-editor-modal';
+        modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity 0.2s;';
+        document.body.appendChild(modal);
+    }
+    
+    let html = `
+    <div style="background:white; border-radius:12px; padding:2rem; width:90%; max-width:500px; box-shadow:0 20px 40px rgba(0,0,0,0.4); transform:scale(0.95); transition:transform 0.2s;" id="points-editor-content">
+        <h2 style="margin-top:0; color:#1e293b; display:flex; justify-content:space-between; align-items:center;">
+            Édition des points
+            <button onclick="document.getElementById('points-editor-modal').style.opacity='0'; setTimeout(()=>document.getElementById('points-editor-modal').style.display='none',200);" style="background:none; border:none; font-size:1.5rem; cursor:pointer; color:#94a3b8;">&times;</button>
+        </h2>
+        <p style="color:#64748b; font-size:0.9rem; margin-bottom:1.5rem;">Modifiez les points pour recalculer le rapport. Naviguez avec Tab.</p>
+        <div style="display:flex; flex-direction:column; gap:10px; max-height:60vh; overflow-y:auto; padding-right:10px;">
+    `;
+    
+    const addPlayerInput = (j) => {
+        if (!j || !j.nom) return '';
+        const currentVal = Math.round(j.calcPoints);
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; background:#f8fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">
+                <span style="font-weight:600; color:#334155;">${j.nom}</span>
+                <input type="number" class="pe-input" data-nom="${j.nom.replace(/"/g, '&quot;')}" value="${currentVal}" style="width:80px; padding:6px; border-radius:6px; border:1px solid #cbd5e1; text-align:right; font-family:inherit; font-weight:600;" onkeydown="if(event.key==='Enter') savePointsEditorModal()">
+            </div>
+        `;
+    };
+    
+    mData.jouas.forEach(j => html += addPlayerInput(j));
+    mData.joubs.forEach(j => html += addPlayerInput(j));
+    
+    html += `
+        </div>
+        <div style="margin-top:2rem; display:flex; justify-content:flex-end; gap:10px;">
+            <button onclick="document.getElementById('points-editor-modal').style.opacity='0'; setTimeout(()=>document.getElementById('points-editor-modal').style.display='none',200);" class="secondary" style="background:#f1f5f9; color:#475569; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;">Annuler</button>
+            <button onclick="savePointsEditorModal()" style="background:#10b981; color:white; border:none; padding:10px 20px; border-radius:8px; cursor:pointer; font-weight:600;"><i class="fas fa-check"></i> Valider et Recalculer</button>
+        </div>
+    </div>
+    `;
+    
+    modal.innerHTML = html;
+    modal.style.display = 'flex';
+    setTimeout(() => {
+        modal.style.opacity = '1';
+        document.getElementById('points-editor-content').style.transform = 'scale(1)';
+        const firstInput = modal.querySelector('.pe-input');
+        if (firstInput) firstInput.focus();
+    }, 10);
+};
+
+window.savePointsEditorModal = async function() {
+    const inputs = document.querySelectorAll('.pe-input');
+    state.customPlayerPoints = state.customPlayerPoints || {};
+    
+    inputs.forEach(input => {
+        const nom = input.getAttribute('data-nom');
+        const val = parseFloat(input.value);
+        if (!isNaN(val)) {
+            state.customPlayerPoints[nom] = val;
+        } else {
+            delete state.customPlayerPoints[nom];
+        }
+    });
+    
+    // Sauvegarder dans localStorage et API
+    localStorage.setItem('ttcav_custom_points', JSON.stringify(state.customPlayerPoints));
+    
+    const formData = new URLSearchParams();
+    formData.append('data', JSON.stringify(state.customPlayerPoints));
+    fetch('api.php?action=saveCustomPoints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData
+    }).catch(e => console.error("Erreur saveCustomPoints API", e));
+    
+    // Fermer modale
+    const modal = document.getElementById('points-editor-modal');
+    if (modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => modal.style.display = 'none', 200);
+    }
+    
+    await triggerRepaintAfterEdit();
+};
+
+window.restoreSavedPlayerPoints = async function() {
+    try {
+        const response = await fetch('api.php?action=getCustomPoints');
+        const data = await response.json();
+        if (data && !data.error && Object.keys(data).length > 0) {
+            state.customPlayerPoints = data;
+            state.apiPointsMode = 'mensuel';
+            localStorage.setItem('ttcav_custom_points', JSON.stringify(data));
+            showToast('Points restaurés depuis le serveur !');
+            await triggerRepaintAfterEdit();
+        } else {
+            showToast('Aucun point sauvegardé sur le serveur.', true);
+        }
+    } catch (e) {
+        showToast('Erreur lors de la restauration.', true);
+    }
+};
+
+window.resetPlayerPointsFromAPI = async function(mode) {
+    let modeText = mode === 'officiel' ? 'officiels' : 'mensuels';
+    state.customPlayerPoints = {};
+    state.apiPointsMode = mode;
+    state.playerDetailsCache = {};
+    Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('ttcav_mensuel_')) localStorage.removeItem(k);
+    });
+    
+    showToast(`Mise à jour depuis FFTT (${modeText})...`);
+    await triggerRepaintAfterEdit(true);
+};
+
+async function triggerRepaintAfterEdit(forceRefresh = false) {
+    const exportContainer = elements.exportContainer;
+    if (!exportContainer) return;
+    
+    const currentScroll = exportContainer.scrollTop;
+    const isGlobal = !!document.getElementById('summary-top');
+    
+    try {
+        if (isGlobal) {
+            await copyAllMatchesToWordPress(forceRefresh);
+        } else if (state.currentMatchResIndex !== null && state.currentMatchResIndex !== undefined) {
+            await showMatchDetails(state.currentMatchResIndex, forceRefresh);
+        }
+        
+        if (exportContainer) {
+            setTimeout(() => {
+                exportContainer.scrollTop = currentScroll;
+            }, 50);
+        }
+    } catch (e) {
+        console.error("Erreur repaint :", e);
+    }
+}
