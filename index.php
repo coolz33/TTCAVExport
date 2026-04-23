@@ -80,8 +80,8 @@
                 <option value="">Sélectionnez une journée</option>
             </select>
             <button id="btn-generate" class="btn-primary">⚡ Générer</button>
-            <button class="secondary" id="btn-copy-all" title="Enchaîner tous les résultats détaillés dans WordPress">
-                <i class="fas fa-layer-group"></i> Copier Résultats (WP)
+            <button class="secondary" id="btn-copy-all" title="Enchaîner tous les résultats détaillés dans WordPress" disabled>
+                <i class="fas fa-layer-group"></i> Rapport complet
             </button>
             <button class="secondary" id="btn-copy-css" title="Copier le CSS pour WordPress">
                 <i class="fas fa-code"></i> Copier CSS (WP)

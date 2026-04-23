@@ -125,7 +125,7 @@ window.addEventListener('load', () => {
                 if (typeof renderPlayers === 'function') renderPlayers();
             };
         }
-        
+
         if (elements.playerSort) {
             elements.playerSort.onchange = () => {
                 if (typeof renderPlayers === 'function') renderPlayers();
@@ -171,7 +171,7 @@ window.addEventListener('load', () => {
                 loadTeams();
             };
         }
-        
+
         // Charger les points personnalisés depuis l'API au démarrage
         fetch('api.php?action=getCustomPoints')
             .then(r => r.json())
@@ -182,7 +182,7 @@ window.addEventListener('load', () => {
                 }
             })
             .catch(e => console.error("Erreur chargement points custom", e));
-            
+
     } catch (e) {
         console.error("Erreur d'initialisation:", e);
         alert("Erreur de démarrage de l'application: " + e.message);
@@ -264,7 +264,7 @@ function isDateClose(dateStr1, dateStr2, maxDays = 5) {
         if (!d1 || !d2 || isNaN(d1) || isNaN(d2)) return false;
         const diff = Math.abs(d1 - d2) / (1000 * 60 * 60 * 24);
         return diff <= maxDays;
-    } catch(e) { return false; }
+    } catch (e) { return false; }
 }
 
 // ===== UTILITAIRES =====
@@ -279,19 +279,19 @@ function getCurrentFFTTMonthLabel() {
 
 function getMonthlyPoints(fullName, licence = null) {
     const monthLabel = getCurrentFFTTMonthLabel();
-    
+
     // 1. D'abord par licence dans le localStorage persistant
     if (licence) {
         const cached = localStorage.getItem(`ttcav_mensuel_${licence}_${monthLabel}`);
         if (cached) return parseFloat(cached);
-        
+
         if (state.playerDetailsCache[licence]) return state.playerDetailsCache[licence].points;
     }
-    
+
     // 2. Recherche par NOM (fallback moins précis)
     if (fullName) {
         const searchNorm = norm(fullName);
-        
+
         // Dans state.players
         if (state.players) {
             const p = state.players.find(x => {
@@ -304,21 +304,21 @@ function getMonthlyPoints(fullName, licence = null) {
                 return p.points_mensuels || p.points_officiels || p.points;
             }
         }
-        
+
         // Dans cache session
         if (state.playerDetailsCache) {
             const cachedEntry = Object.values(state.playerDetailsCache).find(entry => {
                 if (!entry.nom) return false;
                 const combinedNorm = norm(entry.nom);
                 // Match exact ou partiel dans les deux sens
-                return combinedNorm === searchNorm || 
-                       combinedNorm.includes(searchNorm) || 
-                       searchNorm.includes(combinedNorm);
+                return combinedNorm === searchNorm ||
+                    combinedNorm.includes(searchNorm) ||
+                    searchNorm.includes(combinedNorm);
             });
             if (cachedEntry) return cachedEntry.points;
         }
     }
-    
+
     return null;
 }
 
@@ -355,7 +355,7 @@ function setAppBusy(busy) {
         }
     });
     if (elements.loader) {
-        elements.loader.style.display = busy ? 'block' : 'none';
+        elements.loader.style.display = busy ? 'flex' : 'none';
     }
 }
 
@@ -488,7 +488,7 @@ async function loadTeams(forceRefresh = false) {
 
         if (data && data.equipe) {
             const rawTeams = Array.isArray(data.equipe) ? data.equipe : [data.equipe];
-            
+
             // Déduplication par lien de division pour éviter les doublons réels
             const seenLinks = new Set();
             state.teams = rawTeams.filter(t => {
@@ -498,7 +498,7 @@ async function loadTeams(forceRefresh = false) {
                 seenLinks.add(link);
                 return true;
             });
-            
+
             logDebug(`${state.teams.length} équipes chargées (après déduplication).`);
 
             // Extract phases
@@ -544,7 +544,7 @@ async function loadTeams(forceRefresh = false) {
                     if (!t) return;
                     const idx = state.teams.indexOf(t);
                     const tRaw = t.libequipe || t.libequ || t.libepr || t.lib || "";
-                    
+
                     // Formatage standardisé : Villefranche (TTCAV) XX (Division)
                     const teamNum = tRaw.match(/\d+/) ? tRaw.match(/\d+/)[0] : (idx + 1);
                     const tDiv = t.libdivision || t.libdiv || "";
@@ -600,7 +600,7 @@ async function loadTeams(forceRefresh = false) {
                         let link = t.liendivision || t.liendiv || "";
                         return typeof link === 'string' && (link.includes('D1') || link.includes('D2') || link.includes('D3') || link.includes('cx_poule'));
                     }) || filteredTeams[0];
-                    
+
                     if (refTeam) await loadMatchdays(refTeam, forceRefresh);
                 } finally {
                     setAppBusy(false);
@@ -674,7 +674,7 @@ async function loadMatchdays(team, forceRefresh = false) {
                 let sA = typeof round.scorea === 'string' ? round.scorea.trim() : '';
                 let sB = typeof round.scoreb === 'string' ? round.scoreb.trim() : '';
                 const hasScore = (sA !== '' || sB !== '');
-                
+
                 // On ne l'affiche dans le menu que s'il y a un score (sauf si mode "all")
                 if (!hasScore) return;
 
@@ -688,7 +688,7 @@ async function loadMatchdays(team, forceRefresh = false) {
                 const key = tourExtracted.toLowerCase().trim();
                 if (seenRounds.has(key)) return;
                 seenRounds.add(key);
-                
+
                 // On stocke la date de référence pour ce tour (utile pour le recalage des autres équipes)
                 if (d) state.tourDates[key] = d;
 
@@ -792,17 +792,17 @@ async function generateResults() {
                         const nA = norm(getVal(r.equa));
                         const nB = norm(getVal(r.equb));
                         const hasScore = (sA !== '' || sB !== '');
-                        
+
                         const keywords = /ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping|vill(?:efranche)?/gi;
                         const cleanA = nA.replace(keywords, '');
                         const cleanB = nB.replace(keywords, '');
                         const cleanTarget = targetNorm.replace(keywords, '');
-                        
-                        const isA = cleanA.includes(cleanTarget) || cleanTarget.includes(cleanA) || 
-                                    nA.includes('villefranche') || nA.includes('ttcav') || nA.includes('vtt') || nA.includes('villefr');
-                        const isB = cleanB.includes(cleanTarget) || cleanTarget.includes(cleanB) || 
-                                    nB.includes('villefranche') || nB.includes('ttcav') || nB.includes('vtt') || nB.includes('villefr');
-                                    
+
+                        const isA = cleanA.includes(cleanTarget) || cleanTarget.includes(cleanA) ||
+                            nA.includes('villefranche') || nA.includes('ttcav') || nA.includes('vtt') || nA.includes('villefr');
+                        const isB = cleanB.includes(cleanTarget) || cleanTarget.includes(cleanB) ||
+                            nB.includes('villefranche') || nB.includes('ttcav') || nB.includes('vtt') || nB.includes('villefr');
+
                         return hasScore && (isA || isB);
                     });
                 } else {
@@ -811,23 +811,23 @@ async function generateResults() {
                     matchesToProcess = allMatchesInPoule.filter((r, idx) => {
                         const tm = getVal(r.libelle).match(/(?:tour|journ[eé]e|barrage|titre)\s*(?:n°)?\s*\d+/i);
                         let tExt = tm ? tm[0].toLowerCase().replace(/\s*n°\s*/, ' ').trim() : "";
-                        
+
                         const mDate = getVal(r.datereelle) || getVal(r.dateprevue) || "";
                         const refDate = state.tourDates[selectedDayVal];
-                        
+
                         const nA = norm(getVal(r.equa));
                         const nB = norm(getVal(r.equb));
                         const keywords = /ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping|vill(?:efranche)?/gi;
                         const cleanA = nA.replace(keywords, '');
                         const cleanB = nB.replace(keywords, '');
                         const cleanTarget = targetNorm.replace(keywords, '');
-                        
-                        const isOurMatch = cleanA.includes(cleanTarget) || cleanTarget.includes(cleanA) || 
-                                          cleanB.includes(cleanTarget) || cleanTarget.includes(cleanB) ||
-                                          nA.includes('villefranche') || nB.includes('villefranche') ||
-                                          nA.includes('ttcav') || nB.includes('ttcav') ||
-                                          nA.includes('vtt') || nB.includes('vtt') ||
-                                          nA.includes('villefr') || nB.includes('villefr');
+
+                        const isOurMatch = cleanA.includes(cleanTarget) || cleanTarget.includes(cleanA) ||
+                            cleanB.includes(cleanTarget) || cleanTarget.includes(cleanB) ||
+                            nA.includes('villefranche') || nB.includes('villefranche') ||
+                            nA.includes('ttcav') || nB.includes('ttcav') ||
+                            nA.includes('vtt') || nB.includes('vtt') ||
+                            nA.includes('villefr') || nB.includes('villefr');
 
                         if (!isOurMatch) return false;
 
@@ -865,7 +865,7 @@ async function generateResults() {
                     console.log(`DEBUG: Match trouvé pour ${teamName} (${selectedDayVal}):`, matchesToProcess);
                 } else {
                     if (teamName.includes('13') || teamName.includes('14')) {
-                         console.log(`DEBUG: AUCUN MATCH trouvé pour ${teamName} au ${selectedDayVal}.`);
+                        console.log(`DEBUG: AUCUN MATCH trouvé pour ${teamName} au ${selectedDayVal}.`);
                     }
                 }
 
@@ -1023,7 +1023,7 @@ async function showMatchDetails(index) {
         const renc_id = linkParams.get('renc_id') || linkParams.get('res_id') || '';
 
         const data = await fetchData('getMatchDetails', { is_retour, renc_id });
-        
+
         // --- NOUVEAU : Récupération des licences et points mensuels (Villefranche + Adversaires) ---
         try {
             updateLoaderStep(`Récupération des licences de la rencontre...`);
@@ -1031,7 +1031,7 @@ async function showMatchDetails(index) {
             if (dataPlayers && dataPlayers.joueur) {
                 const plist = Array.isArray(dataPlayers.joueur) ? dataPlayers.joueur : [dataPlayers.joueur];
                 if (!state.playerDetailsCache) state.playerDetailsCache = {};
-                
+
                 for (const pj of plist) {
                     // Côté A
                     const licA = pj.xla || pj.licence || '';
@@ -1110,7 +1110,7 @@ async function showMatchDetails(index) {
 }
 
 // ===== GENERATION HTML DETAIL =====
-function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, playersRoster = null) {
+function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = null, playersRoster = null) {
     try {
         const p = details.resultat;
         if (!p) throw new Error("Données de match absentes (resultat manquant)");
@@ -1139,7 +1139,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
 
         // ***** LOGIQUE DE DÉTECTION ET D'ALIGNEMENT DOMICILE/EXTÉRIEUR *****
         // On veut que le détail respecte EXACTEMENT le camp (Home/Away) défini dans la liste globale (res.isHome)
-        
+
         const isOurClub = (name) => {
             if (!name) return false;
             const ns = norm(name);
@@ -1160,7 +1160,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
             // Villefranche est à DOMICILE dans la liste
             equipeA = getStd(res.teamName, true);
             equipeB = nameCache[getVal(res.opponent)] || res.opponent;
-            
+
             // On cherche le score de Villefranche dans le détail
             if (detailSideAIsClub) {
                 finalTeamScoreA = parseInt(p.resa) || res.scoreA;
@@ -1190,7 +1190,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                 finalTeamScoreA = res.scoreA;
             }
         }
-        
+
         // Sécurité pour les scores NaN
         if (isNaN(finalTeamScoreA)) finalTeamScoreA = 0;
         if (isNaN(finalTeamScoreB)) finalTeamScoreB = 0;
@@ -1238,7 +1238,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
             let nB_raw = (j.xjb || '').replace(/\s*[MF]\s*$/, '').trim();
             let pA_raw = parseClassement(j.xca || '');
             let pB_raw = parseClassement(j.xcb || '');
-            
+
             // Tentative de récupération des licences si absentes (via roster)
             let licA = j.xla || j.licence;
             let licB = j.xlb;
@@ -1257,36 +1257,36 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                 }
             }
 
-            const mPtsA_raw = getMonthlyPoints(nA_raw, licA); 
-            const mPtsB_raw = getMonthlyPoints(nB_raw, licB); 
+            const mPtsA_raw = getMonthlyPoints(nA_raw, licA);
+            const mPtsB_raw = getMonthlyPoints(nB_raw, licB);
 
             let isCapA_raw = nA_raw.toLowerCase().includes(' cap') || j.xca === 'cap' || j.capa === '1';
             let isCapB_raw = nB_raw.toLowerCase().includes(' cap') || j.xcb === 'cap' || j.capb === '1';
-            
+
             const nA_clean = nA_raw.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim();
             const nB_clean = nB_raw.replace(/\s*cap(?:itaine)?\.?\s*$/i, '').trim();
-            
+
             let customA = state.customPlayerPoints && state.customPlayerPoints[nA_clean];
             let customB = state.customPlayerPoints && state.customPlayerPoints[nB_clean];
-            
+
             let baseA = state.apiPointsMode === 'officiel' ? pA_raw.raw : (mPtsA_raw || pA_raw.raw);
             let baseB = state.apiPointsMode === 'officiel' ? pB_raw.raw : (mPtsB_raw || pB_raw.raw);
 
-            const pA = { 
-                nom: nA_clean, 
-                classement: pA_raw.text || '', 
-                mensuel: mPtsA_raw, 
-                rawPoints: pA_raw.raw, 
-                calcPoints: customA !== undefined ? customA : baseA, 
-                isCap: isCapA_raw 
+            const pA = {
+                nom: nA_clean,
+                classement: pA_raw.text || '',
+                mensuel: mPtsA_raw,
+                rawPoints: pA_raw.raw,
+                calcPoints: customA !== undefined ? customA : baseA,
+                isCap: isCapA_raw
             };
-            const pB = { 
-                nom: nB_clean, 
-                classement: pB_raw.text || '', 
-                mensuel: mPtsB_raw, 
-                rawPoints: pB_raw.raw, 
-                calcPoints: customB !== undefined ? customB : baseB, 
-                isCap: isCapB_raw 
+            const pB = {
+                nom: nB_clean,
+                classement: pB_raw.text || '',
+                mensuel: mPtsB_raw,
+                rawPoints: pB_raw.raw,
+                calcPoints: customB !== undefined ? customB : baseB,
+                isCap: isCapB_raw
             };
 
             if (!shouldSwapAPI) {
@@ -1327,9 +1327,9 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
         // ===== TABLE DE COMPOSITION =====
         let compoTitleHTML = `<div class="section-title compo-title-row">
             La composition des équipes
-            ${!isBatch ? `<button onclick="openPointsEditorModal('${matchID}')" class="btn-pen-edit" title="Édition rapide des points"><i class="fas fa-pen"></i></button>` : ''}
+            ${!isWordPress ? `<button onclick="openPointsEditorModal('${matchID}')" class="btn-pen-edit" title="Édition rapide des points"><i class="fas fa-pen"></i></button>` : ''}
         </div>`;
-        
+
         let compoHTML = `
         ${compoTitleHTML}
         <table class="premium-table">
@@ -1344,18 +1344,20 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                 let nomHTML = j.isCap ? `<b>${j.nom}</b>` : j.nom;
                 let clastStr = (j.classement || '').trim();
                 const ptsOff = Math.floor(j.rawPoints);
-                
-                clastStr = clastStr.replace(/\s*\(\s*(n°\d+)\s*\).*/i, '$1'); 
+
+                clastStr = clastStr.replace(/\s*\(\s*(n°\d+)\s*\).*/i, '$1');
                 clastStr = clastStr.replace(/\s*[nN]°\s*(\d+).*/i, 'n°$1');
-                
+
                 if (clastStr && clastStr.match(/^\d+$/)) {
                     const numClast = parseInt(clastStr);
-                    if (numClast === ptsOff || numClast > 3000) clastStr = ''; 
-                    else if (numClast > 30) clastStr = 'n°' + clastStr; 
+                    if (numClast === ptsOff || numClast > 3000) clastStr = '';
+                    else if (numClast > 30) clastStr = 'n°' + clastStr;
                 }
-                
+
                 const sep = clastStr ? ' - ' : '';
-                const displayPointsHTML = `${clastStr}${sep}${Math.round(j.calcPoints)}`;
+                const displayPointsHTML = isWordPress
+                    ? `<span class="ranking-num-wrapper">${clastStr}${sep}</span>${Math.round(j.calcPoints)}`
+                    : `${clastStr}${sep}${Math.round(j.calcPoints)}`;
                 htmlA = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPointsHTML}</span></div>`;
             }
             let htmlB = '';
@@ -1365,17 +1367,19 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                 let clastStr = (j.classement || '').trim();
                 const ptsOff = Math.floor(j.rawPoints);
 
-                clastStr = clastStr.replace(/\s*\(\s*(n°\d+)\s*\).*/i, '$1'); 
+                clastStr = clastStr.replace(/\s*\(\s*(n°\d+)\s*\).*/i, '$1');
                 clastStr = clastStr.replace(/\s*[nN]°\s*(\d+).*/i, 'n°$1');
-                
+
                 if (clastStr && clastStr.match(/^\d+$/)) {
                     const numClast = parseInt(clastStr);
-                    if (numClast === ptsOff || numClast > 3000) clastStr = ''; 
-                    else if (numClast > 30) clastStr = 'n°' + clastStr; 
+                    if (numClast === ptsOff || numClast > 3000) clastStr = '';
+                    else if (numClast > 30) clastStr = 'n°' + clastStr;
                 }
 
                 const sep = clastStr ? ' - ' : '';
-                const displayPointsHTML = `${clastStr}${sep}${Math.round(j.calcPoints)}`;
+                const displayPointsHTML = isWordPress
+                    ? `<span class="ranking-num-wrapper">${clastStr}${sep}</span>${Math.round(j.calcPoints)}`
+                    : `${clastStr}${sep}${Math.round(j.calcPoints)}`;
                 htmlB = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPointsHTML}</span></div>`;
             }
             compoHTML += `<tr><td class="col-player">${htmlA}</td><td class="col-player">${htmlB}</td></tr>`;
@@ -1393,7 +1397,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
 
         function getPointsGained(ratingA, ratingB, wonA) {
             if (!ratingA || !ratingB) return 0;
-            const diff = ratingA - ratingB; 
+            const diff = ratingA - ratingB;
             const adiff = Math.abs(diff);
 
             if (wonA) {
@@ -1405,8 +1409,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                     if (diff >= 200) return 2;
                     if (diff >= 150) return 3;
                     if (diff >= 100) return 4;
-                    if (diff >= 50)  return 5;
-                    if (diff >= 25)  return 5.5;
+                    if (diff >= 50) return 5;
+                    if (diff >= 25) return 5.5;
                     return 6;
                 } else {
                     // VICTOIRE ANORMALE (VA - PERF)
@@ -1416,8 +1420,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                     if (adiff >= 200) return 17;
                     if (adiff >= 150) return 13;
                     if (adiff >= 100) return 10;
-                    if (adiff >= 50)  return 8;
-                    if (adiff >= 25)  return 7;
+                    if (adiff >= 50) return 8;
+                    if (adiff >= 25) return 7;
                     return 6;
                 }
             } else {
@@ -1429,8 +1433,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                     if (diff >= 200) return -12.5;
                     if (diff >= 150) return -10;
                     if (diff >= 100) return -8;
-                    if (diff >= 50)  return -7;
-                    if (diff >= 25)  return -6;
+                    if (diff >= 50) return -7;
+                    if (diff >= 25) return -6;
                     return -5;
                 } else {
                     // DÉFAITE NORMALE (DN)
@@ -1440,8 +1444,8 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                     if (adiff >= 200) return -1;
                     if (adiff >= 150) return -2;
                     if (adiff >= 100) return -3;
-                    if (adiff >= 50)  return -4;
-                    if (adiff >= 25)  return -4.5;
+                    if (adiff >= 50) return -4;
+                    if (adiff >= 25) return -4.5;
                     return -5;
                 }
             }
@@ -1571,7 +1575,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
                 // Notre club gagne le set si finalP1 > finalP2 ET on est Home, 
                 // OU si finalP2 > finalP1 ET on est Away.
                 const clubWinsSet = res.isHome ? (finalP1 > finalP2) : (finalP2 > finalP1);
-                
+
                 const scoreText = `${finalP1}-${finalP2}`;
                 return clubWinsSet ? `<strong>${scoreText}</strong>` : scoreText;
             });
@@ -1660,7 +1664,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
             if (detailSideAIsClub && ja) {
                 matched = findMatch(ja);
                 isPlayerA = true;
-            } 
+            }
             if (!matched && !detailSideAIsClub && jb) {
                 matched = findMatch(jb);
                 isPlayerA = false;
@@ -1842,7 +1846,7 @@ function getMatchDetailsHTML(res, details, isBatch = false, rankingData = null, 
             rankingSectionHTML = `<div class="rank-not-available">Données de classement non disponibles pour cette poule.</div>`;
         }
 
-        if (isBatch) {
+        if (isWordPress) {
             // WordPress BLOCK MODE
             // 1. Titre (Heading Block) - Inclut les 2 équipes et le VS stylisé (CENTRÉ)
             const wpTitle = `<!-- wp:heading {"textAlign":"center","level":1,"className":"ttcav-wp-main-title","anchor":"anchor-${matchID}"} -->\n<h1 id="anchor-${matchID}" class="has-text-align-center ttcav-wp-main-title">${equipeA} <span class="ttcav-wp-vs">VS</span> ${equipeB}</h1>\n<!-- /wp:heading -->`;
@@ -2162,7 +2166,7 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
         let summaryTableHTML = `
             <div class="ttcav-export-wrapper" id="summary-top">
                 <div class="section-title">Tableau Récapitulatif</div>
-                <table class="premium-table">
+                <table class="premium-table summary-premium-table">
                     <thead>
                         <tr>
                             <th class="col-header-std">Division</th>
@@ -2348,49 +2352,79 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
 }
 
 function getWordPressCSS() {
-    return `/* --- TTCAV WP STYLES - HESTIA PREMIUM --- */
+    return `@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&family=Inter:wght@400;500;600&display=swap');
+/* --- TTCAV WP STYLES - HESTIA PREMIUM --- */
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;800&family=Inter:wght@400;500;600&display=swap');
-
-/* RESET ET POLICES GLOBALES (HAUTE SPÉCIFICITÉ) */
-.ttcav-export-wrapper, 
-.ttcav-export-wrapper *,
-.ttcav-wp-main-title,
-.ttcav-wp-ai,
-.ttcav-wp-ai * {
-    font-family: 'Inter', sans-serif !important;
-    box-sizing: border-box !important;
-}
-
-/* TITRE PRINCIPAL (Même hors wrapper) */
+/* TITRE PRINCIPAL */
 h1.ttcav-wp-main-title,
-.ttcav-export-wrapper .ttcav-wp-main-title {
+.ttcav-wp-main-title {
     font-family: 'Outfit', sans-serif !important;
-    font-size: clamp(28px, 5vw, 42px) !important;
+    font-size: 48px !important;
     font-weight: 800 !important;
-    text-align: center !important;
-    text-transform: uppercase !important;
     color: #1e293b !important;
-    margin: 60px auto 30px auto !important;
-    line-height: 1.2 !important;
+    text-align: center !important;
+    margin: 60px auto 10px auto !important;
+    line-height: 52px !important;
     letter-spacing: -1px !important;
-    border: none !important;
+    text-transform: uppercase !important;
     display: block !important;
-    width: 100% !important;
+    border: none !important;
 }
 
 /* LE "VS" STYLISÉ */
 .ttcav-wp-vs {
-    display: inline-block !important;
-    background: #eab308 !important;
-    color: #ffffff !important;
-    padding: 2px 12px !important;
-    border-radius: 4px !important;
-    margin: 0 15px !important;
-    font-size: 0.6em !important;
-    vertical-align: middle !important;
-    letter-spacing: 2px !important;
-    font-style: normal !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-size: 18px !important;
+    font-weight: 800 !important;
+    text-align: center !important;
+    color: #eab308 !important;
+    margin: 15px 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-transform: uppercase !important;
+    letter-spacing: 4px !important;
+}
+
+.ttcav-wp-vs::before,
+.ttcav-wp-vs::after {
+    content: "" !important;
+    flex: 1 !important;
+    height: 1px !important;
+    background: #e2e8f0 !important;
+    margin: 0 20px !important;
+}
+
+.mobile-br { display: none !important; }
+.mobile-only-indent { display: none !important; }
+
+/* RESET ET POLICES GLOBALES (HAUTE SPÉCIFICITÉ) */
+.ttcav-export-wrapper, 
+.ttcav-export-wrapper *,
+.ttcav-export-wrapper table,
+.ttcav-export-wrapper td,
+.ttcav-export-wrapper th,
+.ttcav-wp-main-title,
+.ttcav-wp-ai,
+.ttcav-wp-ai * {
+    font-family: 'Outfit', sans-serif !important;
+    box-sizing: border-box !important;
+    line-height: 2.4 !important;
+    text-transform: none !important;
+}
+
+.ttcav-export-wrapper .opacity-5 {
+    opacity: 0.5 !important;
+}
+
+
+.ttcav-export-wrapper .ttcav-wp-vs::before,
+.ttcav-export-wrapper .ttcav-wp-vs::after {
+    content: "" !important;
+    flex: 1 !important;
+    height: 1px !important;
+    background: #e2e8f0 !important;
+    margin: 0 30px !important;
 }
 
 /* SOUS-TITRE */
@@ -2414,65 +2448,97 @@ h1.ttcav-wp-main-title,
 p.ttcav-wp-ai,
 .ttcav-export-wrapper .ttcav-wp-ai {
     background: #f8fafc !important;
-    border-left: 4px solid #8b5cf6 !important;
-    padding: 25px !important;
-    margin: 40px auto !important;
-    font-size: 17px !important;
-    line-height: 1.8 !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    padding: 25px 35px !important;
+    margin: 40px auto 50px auto !important;
+    font-size: 16px !important;
+    line-height: 26px !important;
     color: #334155 !important;
-    font-style: italic !important;
+    position: relative !important;
+    text-align: center !important;
+    display: block !important;
     max-width: 850px !important;
-    border-radius: 0 12px 12px 0 !important;
 }
+
+.ttcav-export-wrapper .ai-summary-box {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    padding: 20px !important;
+    margin: 20px 0 !important;
+    font-style: italic !important;
+    color: #475569 !important;
+    line-height: 1.6 !important;
+}
+
 
 /* TABLES PREMIUM */
 .ttcav-export-wrapper .premium-table {
     width: 100% !important;
+    max-width: 100% !important;
     border-collapse: separate !important;
     border-spacing: 0 !important;
-    margin: 30px auto !important;
+    margin-bottom: 2rem !important;
+    border: 1px solid #e2e8f0 !important;
     border-radius: 12px !important;
     overflow: hidden !important;
-    border: 1px solid #e2e8f0 !important;
     background: #ffffff !important;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+    table-layout: auto !important;
 }
-
-/* Forcer les coins arrondis sur les cellules de coin */
-.ttcav-export-wrapper .premium-table tr:first-child th:first-child { border-top-left-radius: 12px !important; }
-.ttcav-export-wrapper .premium-table tr:first-child th:last-child { border-top-right-radius: 12px !important; }
-.ttcav-export-wrapper .premium-table tr:last-child td:first-child { border-bottom-left-radius: 12px !important; }
-.ttcav-export-wrapper .premium-table tr:last-child td:last-child { border-bottom-right-radius: 12px !important; }
 
 .ttcav-export-wrapper .premium-table th {
     background: #1e293b !important;
     color: #ffffff !important;
     font-weight: 700 !important;
-    padding: 16px !important;
-    font-size: 14px !important;
     text-transform: uppercase !important;
-    letter-spacing: 1px !important;
-    text-align: center !important;
+    font-size: 14px !important;
+    padding: 15px 10px !important;
     border: none !important;
-}
-
-/* Bordure entre les colonnes de composition */
-.ttcav-export-wrapper .premium-table th:first-child,
-.ttcav-export-wrapper .premium-table td:first-child {
-    border-right: 1px solid #e2e8f0 !important;
+    line-height: 1.2 !important;
 }
 
 .ttcav-export-wrapper .premium-table td {
-    padding: 14px 20px !important;
+    padding: 12px 15px !important;
     border-bottom: 1px solid #f1f5f9 !important;
-    font-size: 15px !important;
-    color: #1e293b !important;
+    border-right: 1px solid #f1f5f9 !important;
+    font-size: 14px !important;
+    text-align: center !important;
+    color: #334155 !important;
     vertical-align: middle !important;
+    background: transparent !important;
+    line-height: 1.4 !important;
 }
 
-/* Zébrure des lignes */
-.ttcav-export-wrapper .premium-table tbody tr:nth-child(even) {
-    background-color: #f8fafc !important;
+/* Éviter le passage à la ligne sur bureau */
+.ttcav-export-wrapper .col-summary-cat,
+.ttcav-export-wrapper .col-summary-score,
+.ttcav-export-wrapper .col-summary-home,
+.ttcav-export-wrapper .col-summary-away,
+.ttcav-export-wrapper .col-player,
+.ttcav-export-wrapper .player-name,
+.ttcav-export-wrapper .player-pts {
+    white-space: nowrap !important;
+}
+
+.ttcav-export-wrapper .compo-player-box {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 15px !important;
+    width: 100% !important;
+}
+
+.ttcav-export-wrapper .premium-table td:last-child {
+    border-right: none !important;
+}
+
+.ttcav-export-wrapper .premium-table tr:last-child td {
+    border-bottom: none !important;
+}
+
+.ttcav-export-wrapper .premium-table tr:nth-child(even) {
+    background: #f8fafc !important;
 }
 
 /* Footer de table (Total) */
@@ -2481,7 +2547,8 @@ p.ttcav-wp-ai,
     font-weight: 800 !important;
     color: #475569 !important;
     text-transform: uppercase !important;
-    font-size: 13px !important;
+    font-size: 14px !important;
+    padding: 15px !important;
     border-top: 2px solid #e2e8f0 !important;
 }
 
@@ -2505,44 +2572,146 @@ p.ttcav-wp-ai,
     justify-content: center !important;
     font-weight: 800 !important;
     font-family: 'Outfit', sans-serif !important;
-    border-radius: 8px !important;
-    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.1) !important;
 }
-.ttcav-export-wrapper .score-box-small { width: 45px !important; height: 55px !important; font-size: 26px !important; }
-.ttcav-export-wrapper .score-box-large { width: 75px !important; height: 90px !important; font-size: 48px !important; }
+.ttcav-export-wrapper .score-box-small { width: 48px !important; height: 60px !important; font-size: 28px !important; }
+.ttcav-export-wrapper .score-box-large { width: 75px !important; height: 90px !important; font-size: 50px !important; }
 .ttcav-export-wrapper .digit-red { color: #ef4444 !important; }
 .ttcav-export-wrapper .digit-black { color: #1e293b !important; }
 
-/* Status Victoire/Défaite */
-.ttcav-export-wrapper .status-victoire { color: #10b981 !important; font-weight: 800 !important; }
-.ttcav-export-wrapper .status-defaite { color: #ef4444 !important; font-weight: 800 !important; }
-.ttcav-export-wrapper .status-nul { color: #f59e0b !important; font-weight: 800 !important; }
+.ttcav-export-wrapper .score-divider {
+    width: 2px !important;
+    height: 30px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+}
 
-.ttcav-export-wrapper .player-win { font-weight: 700 !important; color: #0f172a !important; }
+/* Status Victoire/Défaite (Badges) */
+.ttcav-export-wrapper .status-victoire {
+    color: #10b981 !important;
+    background: #e6f7f2 !important; /* Couleur solide pour éviter les soucis de transparence */
+    padding: 4px 12px !important;
+    border-radius: 20px !important;
+    font-weight: 800 !important;
+    display: inline-block !important;
+    font-size: 11px !important;
+    text-decoration: none !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    border: none !important;
+}
+.ttcav-export-wrapper .status-defaite {
+    color: #ef4444 !important;
+    background: #fdf2f2 !important;
+    padding: 4px 12px !important;
+    border-radius: 20px !important;
+    font-weight: 800 !important;
+    display: inline-block !important;
+    font-size: 11px !important;
+    text-decoration: none !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    border: none !important;
+}
+.ttcav-export-wrapper .status-nul {
+    color: #f59e0b !important;
+    background: #fff9eb !important;
+    padding: 4px 12px !important;
+    border-radius: 20px !important;
+    font-weight: 800 !important;
+    display: inline-block !important;
+    font-size: 11px !important;
+    text-decoration: none !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    border: none !important;
+}
+
+.ttcav-export-wrapper .player-win { font-weight: 800 !important; color: #1e293b !important; }
 .ttcav-export-wrapper .player-loss { color: #94a3b8 !important; }
 
-/* Autres éléments */
-.ttcav-export-wrapper .section-title {
-    font-family: 'Outfit', sans-serif !important;
-    font-size: 22px !important;
+/* Couleurs Points Match Sheet */
+.ttcav-export-wrapper .pts-pos { color: #10b981 !important; font-weight: 700 !important; }
+.ttcav-export-wrapper .pts-neg { color: #ef4444 !important; font-weight: 700 !important; }
+.ttcav-export-wrapper .pts-neu { color: #94a3b8 !important; }
+
+/* Badges et Indicateurs */
+.ttcav-export-wrapper .badge-win { background: #dcfce7 !important; color: #166534 !important; padding: 4px 12px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 13px !important; display: inline-block !important; }
+.ttcav-export-wrapper .badge-loss { background: #fee2e2 !important; color: #991b1b !important; padding: 4px 12px !important; border-radius: 8px !important; font-weight: 800 !important; font-size: 13px !important; display: inline-block !important; }
+
+/* Alignements Colonnes Résumé & Classement */
+.ttcav-export-wrapper .summary-row td {
+    padding: 0 !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.ttcav-export-wrapper .col-summary-cat { 
+    color: #94a3b8 !important; 
+    font-size: 14px !important; 
+    padding: 12px 15px !important;
+}
+
+.ttcav-export-wrapper .match-line-scroll-wrapper {
+    width: 100% !important;
+}
+
+.ttcav-export-wrapper .match-line-content {
+    display: flex !important;
+    align-items: center !important;
+    padding: 10px 15px !important;
+    width: 100% !important;
+}
+
+.ttcav-export-wrapper .col-summary-home { flex: 1 !important; text-align: right !important; }
+.ttcav-export-wrapper .col-summary-score { flex: 0 0 80px !important; text-align: center !important; font-weight: 700 !important; background: #f8fafc !important; margin: 0 10px !important; border-radius: 6px !important; padding: 5px !important; }
+.ttcav-export-wrapper .col-summary-away { flex: 1 !important; text-align: left !important; }
+.ttcav-export-wrapper .col-summary-status { text-align: right !important; text-transform: uppercase !important; font-size: 14px !important; padding: 12px 15px !important; }
+
+.ttcav-export-wrapper .col-rank-num { width: 50px !important; text-align: center !important; font-weight: 800 !important; color: #64748b !important; }
+.ttcav-export-wrapper .col-rank-team { text-align: left !important; font-weight: 700 !important; }
+.ttcav-export-wrapper .col-rank-pts { font-weight: 800 !important; color: #1e293b !important; text-align: center !important; }
+.ttcav-export-wrapper .col-rank-std { text-align: center !important; color: #64748b !important; }
+
+.ttcav-export-wrapper .ranking-row-us,
+.ttcav-export-wrapper .ranking-row-us td {
+    background: #f0f9ff !important;
     font-weight: 800 !important;
     color: #1e293b !important;
-    text-transform: uppercase !important;
-    margin: 60px 0 25px 0 !important;
+}
+
+/* Autres éléments */
+.ttcav-export-wrapper h2.section-title,
+.ttcav-export-wrapper .section-title {
     text-align: center !important;
+    font-size: 20px !important; /* Utilisation de PX au lieu de REM pour éviter les variations de base du thème */
+    margin: 50px 0 20px 0 !important;
+    color: #64748b !important;
+    position: relative !important;
+    font-family: 'Outfit', sans-serif !important;
+    text-transform: none !important;
+    font-weight: 600 !important;
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    line-height: 1.2 !important;
 }
 
 .ttcav-export-wrapper .summary-totals-card {
-    background: #1e293b !important;
-    color: #ffffff !important;
-    padding: 25px !important;
+    background: #f8fafc !important;
+    color: #64748b !important;
+    padding: 2.5rem !important;
     border-radius: 12px !important;
     font-family: 'Outfit', sans-serif !important;
-    font-weight: 800 !important;
-    font-size: 24px !important;
+    font-weight: 700 !important;
+    font-size: 20px !important;
     text-align: center !important;
     margin: 40px 0 !important;
+    border: 1px solid #e2e8f0 !important;
 }
+
+.ttcav-export-wrapper .total-v { color: #10b981 !important; margin: 0 10px !important; }
+.ttcav-export-wrapper .total-n { color: #64748b !important; margin: 0 10px !important; }
+.ttcav-export-wrapper .total-d { color: #ef4444 !important; margin: 0 10px !important; }
 
 .ttcav-export-wrapper .match-sets-sum {
     text-align: center !important;
@@ -2552,26 +2721,191 @@ p.ttcav-wp-ai,
     font-size: 15px !important;
 }
 
-.ttcav-export-wrapper .summary-footer {
-    background: #f8fafc !important;
-    padding: 30px !important;
-    border-radius: 12px !important;
-    border: 2px solid #e2e8f0 !important;
-    font-size: 26px !important;
-    font-weight: 800 !important;
-    color: #1e293b !important;
-    text-align: center !important;
-    margin: 50px 0 !important;
-    text-transform: uppercase !important;
-}
-
-/* RESPONSIVE */
 @media (max-width: 768px) {
-    h1.ttcav-wp-main-title { font-size: 26px !important; }
-    .ttcav-export-wrapper .premium-table { font-size: 13px !important; }
+    h1.ttcav-wp-main-title { font-size: 24px !important; line-height: 28px !important; margin: 30px auto 10px auto !important; }
+    .ttcav-wp-vs { font-size: 14px !important; margin: 10px 0 !important; }
+    .ttcav-wp-vs::before, .ttcav-wp-vs::after { margin: 0 10px !important; }
+    
+    .mobile-br { display: block !important; }
+    
+    .ttcav-export-wrapper .premium-table { 
+        font-size: 11px !important; 
+        display: block !important;
+        width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+    
+    /* Pas de fond alterné sur mobile */
+    .ttcav-export-wrapper .premium-table tr:nth-child(even) { background: transparent !important; }
+
     .ttcav-export-wrapper .premium-table td, 
-    .ttcav-export-wrapper .premium-table th { padding: 10px 8px !important; }
+    .ttcav-export-wrapper .premium-table th { 
+        padding: 6px 4px !important; 
+    }
+
+    /* Empêcher les scores de sets de se couper */
+    .ttcav-export-wrapper .col-set {
+        padding: 5px 2px !important;
+        font-size: 10px !important;
+        white-space: nowrap !important;
+        min-width: 30px !important;
+    }
+    
+    .ttcav-export-wrapper .col-score {
+        padding: 5px 2px !important;
+        white-space: nowrap !important;
+    }
+    .ttcav-export-wrapper .badge-win, 
+    .ttcav-export-wrapper .badge-loss {
+        padding: 3px 8px !important;
+        font-size: 11px !important;
+        display: inline-block !important;
+        white-space: nowrap !important;
+    }
+
+    /* Composition d'équipe flexible */
+    .ttcav-export-wrapper .compo-player-box {
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        justify-content: flex-start !important;
+        gap: 2px 8px !important;
+        width: 100% !important;
+    }
+    .ttcav-export-wrapper .compo-player-box span:first-child {
+        text-align: left !important;
+        flex: 1 1 60% !important;
+        white-space: normal !important;
+        line-height: 1.2 !important;
+    }
+    .ttcav-export-wrapper .compo-player-box span:last-child {
+        text-align: right !important;
+        flex: 0 0 auto !important;
+        margin-left: auto !important;
+        font-weight: 700 !important;
+    }
+
     .ttcav-export-wrapper .score-box-large { width: 55px !important; height: 70px !important; font-size: 34px !important; }
+
+    /* PAS DE ZEBRA SUR LE RÉSUMÉ UNIQUEMENT SUR MOBILE */
+    .ttcav-export-wrapper .summary-premium-table tr:nth-child(even) { background: transparent !important; }
+    
+    /* MASQUER LE HEADER DU RÉSUMÉ UNIQUEMENT SUR MOBILE */
+    .ttcav-export-wrapper .summary-premium-table thead,
+    .ttcav-export-wrapper .summary-premium-table thead tr,
+    .ttcav-export-wrapper .summary-premium-table thead th { 
+        display: none !important; 
+        height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        visibility: hidden !important;
+    }
+
+    .ttcav-export-wrapper .premium-table td, 
+    .ttcav-export-wrapper .premium-table th { 
+        padding: 10px 8px !important; 
+    }
+
+    /* Division avec fond gris FORCÉ et hauteur réduite */
+    .ttcav-export-wrapper .summary-premium-table td.col-summary-cat {
+        order: 1 !important;
+        width: 100% !important;
+        display: block !important;
+        text-align: center !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        color: #475569 !important;
+        padding: 6px 0 !important; /* Réduit */
+        border: none !important;
+        text-transform: uppercase !important;
+        background-color: #f1f5f9 !important;
+        background: #f1f5f9 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+        line-height: 1.4 !important; /* Réduit */
+    }
+    .ttcav-export-wrapper .summary-premium-table td.col-summary-cat a {
+        background: transparent !important;
+        display: block !important;
+        width: 100% !important;
+        color: inherit !important;
+        text-decoration: none !important;
+    }
+    
+    .ttcav-export-wrapper .summary-row {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        padding: 0 !important;
+        border-bottom: 1px solid #f1f5f9 !important;
+        align-items: center !important;
+    }
+
+    /* Conteneur virtuel pour le scroll horizontal des équipes (Hauteur réduite) */
+    .ttcav-export-wrapper .col-summary-home,
+    .ttcav-export-wrapper .col-summary-score,
+    .ttcav-export-wrapper .col-summary-away {
+        order: 2 !important;
+        padding: 8px 5px !important; /* Réduit de 12px à 8px */
+        border: none !important;
+        background: transparent !important;
+        line-height: 1.4 !important; /* Réduit */
+    }
+
+    .ttcav-export-wrapper .col-summary-home {
+        flex: 1 !important;
+        text-align: right !important;
+        font-size: 13px !important;
+        white-space: nowrap !important;
+        min-width: 110px !important;
+    }
+    .ttcav-export-wrapper .col-summary-away {
+        flex: 1 !important;
+        text-align: left !important;
+        font-size: 13px !important;
+        white-space: nowrap !important;
+        min-width: 110px !important;
+    }
+    .ttcav-export-wrapper .col-summary-score {
+        flex: 0 0 65px !important;
+        font-size: 16px !important;
+        font-weight: 800 !important;
+        background: #f8fafc !important;
+        text-align: center !important;
+        margin: 0 10px !important;
+        border-radius: 6px !important;
+    }
+
+    .ttcav-export-wrapper .col-summary-status {
+        order: 3 !important;
+        width: 100% !important;
+        padding: 8px 0 !important;
+        border-top: 1px solid #f1f5f9 !important;
+        text-align: center !important;
+        display: block !important;
+        border-right: none !important;
+    }
+
+    /* Masquer le n° de classement sur mobile */
+    .ttcav-export-wrapper .ranking-num-wrapper {
+        display: none !important;
+    }
+    .ttcav-export-wrapper .col-summary-status {
+        width: 100% !important;
+        padding: 5px 0 !important;
+        border: none !important;
+        text-align: center !important;
+        display: block !important;
+    }
+
+    .ttcav-export-wrapper .section-title { font-size: 18px !important; margin: 35px 0 15px 0 !important; }
+    .ttcav-export-wrapper .summary-totals-card { padding: 15px !important; }
+    .ttcav-export-wrapper .ranking-box-val { font-size: 20px !important; }
+
+    /* Permettre le passage à la ligne sur mobile si nécessaire */
+    .ttcav-export-wrapper .col-player,
+    .ttcav-export-wrapper .player-name,
+    .ttcav-export-wrapper .player-pts {
+        white-space: normal !important;
+    }
 }
 
 /* BOX CLASSEMENT */
@@ -2580,6 +2914,12 @@ p.ttcav-wp-ai,
     justify-content: space-between !important; 
     gap: 15px !important; 
     margin: 30px 0 !important; 
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    padding: 1.5rem !important;
+    align-items: center !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
 }
 .ttcav-export-wrapper .ranking-box-item { 
     background: #f8fafc !important; 
@@ -2589,8 +2929,8 @@ p.ttcav-wp-ai,
     text-align: center !important; 
     border: 1px solid #e2e8f0 !important;
 }
-.ttcav-export-wrapper .ranking-box-label { font-size: 13px !important; font-weight: 700 !important; color: #64748b !important; text-transform: uppercase !important; margin-bottom: 5px !important; }
-.ttcav-export-wrapper .ranking-box-val { font-size: 20px !important; font-weight: 800 !important; color: #1e293b !important; }
+.ttcav-export-wrapper .ranking-box-label { font-size: 14px !important; font-weight: 700 !important; color: #64748b !important; text-transform: uppercase !important; margin-bottom: 5px !important; }
+.ttcav-export-wrapper .ranking-box-val { font-size: 24px !important; font-weight: 800 !important; color: #1e293b !important; }
 
 .ttcav-export-wrapper .val-v { color: #10b981 !important; }
 .ttcav-export-wrapper .val-n { color: #64748b !important; }
@@ -2599,10 +2939,23 @@ p.ttcav-wp-ai,
 /* SEPARATEUR ET ANCRES */
 .ttcav-export-wrapper .match-separator { 
     height: 1px !important; 
-    background: #cbd5e1 !important; 
-    margin: 80px auto !important; 
-    max-width: 400px !important; 
+    background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important; 
+    margin: 100px auto !important; 
+    max-width: 600px !important; 
+    position: relative !important;
     border: none !important; 
+}
+
+.ttcav-export-wrapper .match-separator::after {
+    content: "◈" !important;
+    position: absolute !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    background: white !important;
+    padding: 0 15px !important;
+    color: #94a3b8 !important;
+    font-size: 18px !important;
 }
 [id^="anchor-"], #summary-top { scroll-margin-top: 120px !important; }
 
@@ -2687,7 +3040,7 @@ function copyWPStylesToClipboard() {
 
 function copyWPHTMLToClipboard() {
     let finalHTML = state.giantHTMLRaw;
-    
+
     // Nettoyage : Fusionner les blocs wp:html consécutifs
     finalHTML = finalHTML.replace(/<!--\s*\/wp:html\s*-->\s*<!--\s*wp:html\s*-->/g, '\n');
 
@@ -2816,7 +3169,7 @@ async function loadPlayers(forceRefresh = false) {
     const today = new Date();
     const currentDay = today.getDate();
     const lastUpdate = cachedInfo.updatedAt ? new Date(cachedInfo.updatedAt) : null;
-    
+
     let isStale = false;
     // Logique demandée : si entre le 10 et le 20 du mois, et cache d'avant le 10 -> Refresh
     if (lastUpdate) {
@@ -2845,7 +3198,7 @@ async function loadPlayers(forceRefresh = false) {
         const shouldSilentSync = isWednesday && lastSyncDay !== todayStr;
 
         await syncPlayerMensuelPoints(playersLoaded, false, shouldSilentSync);
-        
+
         if (shouldSilentSync) {
             cachedInfo.lastSyncDay = todayStr;
             localStorage.setItem(cacheInfoKey, JSON.stringify(cachedInfo));
@@ -2863,18 +3216,18 @@ async function loadPlayers(forceRefresh = false) {
         const data = await fetchData('getPlayers', { clubId: state.clubId }, forceRefresh);
         if (data && data.joueur) {
             let playersArray = Array.isArray(data.joueur) ? data.joueur : [data.joueur];
-            
+
             // Log de détection pour le premier joueur (pour le debug)
             const pj = playersArray[0];
             const source = pj.pts ? 'pts' : (pj.point ? 'point' : (pj.points ? 'points' : 'clast'));
             logDebug(`Détection points (source: ${source}). Exemple: ${pj.nom} -> ${pj[source]}`);
-            
+
             // --- GESTION DE L'HISTORIQUE LOCAL ---
             const historyKey = 'ttcav_points_history';
             let pointsHistory = JSON.parse(localStorage.getItem(historyKey) || '{}');
-            
+
             const currentMonthKeys = getCurrentFFTTMonthLabel();
-            
+
             // Mois précédent pour la progression
             const parts = currentMonthKeys.split('-');
             let prevDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1);
@@ -2882,33 +3235,33 @@ async function loadPlayers(forceRefresh = false) {
             let prevMonthKeys = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
             if (!pointsHistory[currentMonthKeys]) pointsHistory[currentMonthKeys] = {};
-            
+
             playersArray.forEach(p => {
-                const currentPts = parseFloat(p.pts || p.point || p.points || p.clast || 0); 
-                
-                if (currentPts > 100) p.points = currentPts; 
+                const currentPts = parseFloat(p.pts || p.point || p.points || p.clast || 0);
+
+                if (currentPts > 100) p.points = currentPts;
                 else p.points = currentPts * 100;
-                
-                p.points_officiels = Math.floor(p.points); 
-                
+
+                p.points_officiels = Math.floor(p.points);
+
                 // Restaurer depuis le cache mensuel si on l'a déjà, sinon prendre le global
                 const cachedMens = localStorage.getItem(`ttcav_mensuel_${p.licence}_${currentMonthKeys}`);
                 p.points_mensuels = cachedMens ? parseFloat(cachedMens) : currentPts;
-                
+
                 pointsHistory[currentMonthKeys][p.licence] = p.points;
                 let prevPts = pointsHistory[prevMonthKeys]?.[p.licence] || p.points;
                 p.prog_mens = Math.round(p.points - prevPts);
             });
-            
+
             localStorage.setItem(historyKey, JSON.stringify(pointsHistory));
 
             playersLoaded = playersArray;
             state.players = playersArray;
-            state.players.sort((a,b) => (parseFloat(b.points_mensuels || b.points_officiels)||0) - (parseFloat(a.points_mensuels || a.points_officiels)||0));
+            state.players.sort((a, b) => (parseFloat(b.points_mensuels || b.points_officiels) || 0) - (parseFloat(a.points_mensuels || a.points_officiels) || 0));
             localStorage.setItem(cacheKey, JSON.stringify(state.players));
-            const infoToSave = { 
+            const infoToSave = {
                 updatedAt: new Date().toISOString(),
-                lastSyncDay: today.toDateString() 
+                lastSyncDay: today.toDateString()
             };
             localStorage.setItem('ttcav_players_cache_info', JSON.stringify(infoToSave));
             renderPlayers();
@@ -2931,7 +3284,7 @@ async function loadPlayers(forceRefresh = false) {
 async function syncPlayerMensuelPoints(playersArray, forceRefresh = false, silent = false) {
     const today = new Date();
     const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    
+
     // Optimisation : On ne fetch que si on n'a pas déjà de décimales (points_mensuels === entier)
     let playersToFetch = playersArray.filter(p => {
         if (forceRefresh) return true;
@@ -2939,7 +3292,7 @@ async function syncPlayerMensuelPoints(playersArray, forceRefresh = false, silen
         const inLocal = localStorage.getItem(`ttcav_mensuel_${p.licence}_${monthLabel}`);
         return !inLocal && !hasDecimals;
     });
-    
+
     // Restaurer depuis localStorage pour ceux déjà en cache
     playersArray.forEach(p => {
         if (!p.points_mensuels || p.points_mensuels % 1 === 0) {
@@ -2951,11 +3304,11 @@ async function syncPlayerMensuelPoints(playersArray, forceRefresh = false, silen
     if (playersToFetch.length > 0) {
         const wasBusy = elements.loader && elements.loader.style.display === 'block';
         if (!wasBusy && !silent) setAppBusy(true);
-        
+
         for (let i = 0; i < playersToFetch.length; i++) {
             const p = playersToFetch[i];
             if (!silent) {
-                updateLoaderStep(`Précision mensuelle... (${i+1}/${playersToFetch.length})<br><span class="color-primary font-size-large">${p.nom} ${p.prenom}</span>`);
+                updateLoaderStep(`Précision mensuelle... (${i + 1}/${playersToFetch.length})<br><span class="color-primary font-size-large">${p.nom} ${p.prenom}</span>`);
             }
             try {
                 // Utilisation du bypass cache pour être sûr d'avoir le point live
@@ -2984,28 +3337,28 @@ async function syncPlayerMensuelPoints(playersArray, forceRefresh = false, silen
 async function syncPlayerHistories(playersArray) {
     const today = new Date();
     const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    
+
     // Identifier les joueurs n'ayant pas leur historique en cache pour ce mois
     let playersToFetch = playersArray.filter(p => !localStorage.getItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`));
-    
+
     if (playersToFetch.length > 0) {
         const wasBusy = elements.loader && elements.loader.style.display === 'block';
         if (!wasBusy) setAppBusy(true);
-        
+
         for (let i = 0; i < playersToFetch.length; i++) {
             const p = playersToFetch[i];
             updateLoaderStep(`Mise en cache des historiques... (${i + 1}/${playersToFetch.length})<br><span class="color-primary font-size-large">${p.nom} ${p.prenom}</span>`);
-            
+
             try {
                 const hData = await fetchData('getPlayerHistory', { licence: p.licence });
                 if (hData && hData.histo) {
                     const hd = Array.isArray(hData.histo) ? hData.histo : [hData.histo]; // Retrait du .reverse()
-                    
+
                     // Purger l'ancien cache éventuel pour ce joueur
                     Object.keys(localStorage).forEach(k => {
                         if (k.startsWith(`ttcav_histo_v2_${p.licence}`) || k.startsWith(`ttcav_histo_v3_${p.licence}`)) localStorage.removeItem(k);
                     });
-                    
+
                     localStorage.setItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`, JSON.stringify(hd));
                 }
                 // Léger délai pour ne pas brusquer l'API FFTT
@@ -3027,14 +3380,14 @@ window.setPlayerSort = function (col) {
     renderPlayers();
 };
 
-window.refreshSinglePlayerPoints = async function(licence) {
+window.refreshSinglePlayerPoints = async function (licence) {
     if (!licence) return;
     const btn = event.currentTarget;
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     }
-    
+
     try {
         const data = await fetchData('getPlayerDetail', { licence }, true);
         if (data && data.joueur) {
@@ -3048,7 +3401,7 @@ window.refreshSinglePlayerPoints = async function(licence) {
 
                 // MISE À JOUR DU STATE ET DU CACHE GLOBAL
                 localStorage.setItem('ttcav_players_cache_v1', JSON.stringify(state.players));
-                
+
                 renderPlayers();
                 showToast(`Points mensuels de ${p.nom} : ${Math.round(mPts)}`);
             }
@@ -3065,42 +3418,42 @@ window.refreshSinglePlayerPoints = async function(licence) {
 
 window.renderPlayers = function () {
     if (!elements.playersList) return;
-    
+
     // Calcul à la volée des métriques détaillées d'après le cache de l'historique FFTT
     const today = new Date();
     const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-    
+
     state.players.forEach(p => {
         const histoData = JSON.parse(localStorage.getItem(`ttcav_histo_v3_${p.licence}_${monthLabel}`) || 'null');
         const virtPts = parseFloat(localStorage.getItem(`ttcav_virtuel_${p.licence}_${monthLabel}`) || '0');
         p.ph1 = 0; p.ph2 = 0; p.prog_ann = 0;
-        p.virtuel = (parseFloat(p.points)||0) + virtPts;
+        p.virtuel = (parseFloat(p.points) || 0) + virtPts;
         p.prog_virt = virtPts;
-        
+
         if (histoData && histoData.length > 0) {
             let lastPh1 = [...histoData].reverse().find(h => /ph.*(1|I)/i.test(getVal(h.saison)));
             let lastPh2 = [...histoData].reverse().find(h => /ph.*(2|II)/i.test(getVal(h.saison)));
-            
+
             if (lastPh1) p.ph1 = parseInt(getVal(lastPh1.point)) || 0;
             if (lastPh2) p.ph2 = parseInt(getVal(lastPh2.point)) || 0;
-            
-            if (p.ph1 > 0) p.prog_ann = Math.round((parseInt(p.points)||0) - p.ph1);
+
+            if (p.ph1 > 0) p.prog_ann = Math.round((parseInt(p.points) || 0) - p.ph1);
         }
     });
 
     const filter = elements.playerSearch ? elements.playerSearch.value : '';
     const normStr = s => (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     let filtered = state.players.filter(p => normStr(`${p.nom} ${p.prenom}`).includes(normStr(filter)) || p.licence.includes(filter));
-    
+
     filtered.sort((a, b) => {
         let valA, valB;
-        if (window.playerSortCol === 'prog') { valA = parseInt(a.prog_mens)||0; valB = parseInt(b.prog_mens)||0; }
-        else if (window.playerSortCol === 'prog_ann') { valA = parseInt(a.prog_ann)||0; valB = parseInt(b.prog_ann)||0; }
-        else if (window.playerSortCol === 'virt') { valA = parseFloat(a.points_mensuels || a.points_officiels || a.points)||0; valB = parseFloat(b.points_mensuels || b.points_officiels || b.points)||0; }
-        else if (window.playerSortCol === 'ph1') { valA = parseInt(a.ph1)||0; valB = parseInt(b.ph2)||0; } // Correction ph2 -> ph1 ? Non, wait.
-        else if (window.playerSortCol === 'ph2') { valA = parseInt(a.ph2)||0; valB = parseInt(b.ph2)||0; }
+        if (window.playerSortCol === 'prog') { valA = parseInt(a.prog_mens) || 0; valB = parseInt(b.prog_mens) || 0; }
+        else if (window.playerSortCol === 'prog_ann') { valA = parseInt(a.prog_ann) || 0; valB = parseInt(b.prog_ann) || 0; }
+        else if (window.playerSortCol === 'virt') { valA = parseFloat(a.points_mensuels || a.points_officiels || a.points) || 0; valB = parseFloat(b.points_mensuels || b.points_officiels || b.points) || 0; }
+        else if (window.playerSortCol === 'ph1') { valA = parseInt(a.ph1) || 0; valB = parseInt(b.ph2) || 0; } // Correction ph2 -> ph1 ? Non, wait.
+        else if (window.playerSortCol === 'ph2') { valA = parseInt(a.ph2) || 0; valB = parseInt(b.ph2) || 0; }
         else if (window.playerSortCol === 'name') { valA = a.nom.toLowerCase(); valB = b.nom.toLowerCase(); }
-        else { valA = parseFloat(a.points_officiels || a.points)||0; valB = parseFloat(b.points_officiels || b.points)||0; }
+        else { valA = parseFloat(a.points_officiels || a.points) || 0; valB = parseFloat(b.points_officiels || b.points) || 0; }
 
         if (window.playerSortCol === 'name') return valA.localeCompare(valB) * window.playerSortOrder;
         return (valA - valB) * window.playerSortOrder;
@@ -3111,31 +3464,31 @@ window.renderPlayers = function () {
         elements.playersList.innerHTML = `<div class="loading-placeholder">Aucun joueur trouvé.</div>`;
         return;
     }
-    
+
     let html = `
         <div class="player-header-wrapper">
             <div class="player-header-item">
                 <div class="player-header-main" onclick="setPlayerSort('name')">
-                    <span class="player-sort-icon"><i class="fas fa-sort${window.playerSortCol === 'name' ? (window.playerSortOrder===1?'-alpha-down':'-alpha-up') : ''}" style="opacity: ${window.playerSortCol === 'name' ? '1' : '0.3'}"></i></span> JOUEUR
+                    <span class="player-sort-icon"><i class="fas fa-sort${window.playerSortCol === 'name' ? (window.playerSortOrder === 1 ? '-alpha-down' : '-alpha-up') : ''}" style="opacity: ${window.playerSortCol === 'name' ? '1' : '0.3'}"></i></span> JOUEUR
                 </div>
                 <div class="player-stats-header">
                     <div class="stat-group" onclick="setPlayerSort('points')">
-                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'points' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'points' ? '1' : '0.3'}"></i>Officiel</div>
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'points' ? (window.playerSortOrder === 1 ? '-numeric-up' : '-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'points' ? '1' : '0.3'}"></i>Officiel</div>
                     </div>
                     <div class="stat-group" onclick="setPlayerSort('virt')">
-                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'virt' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'virt' ? '1' : '0.3'}"></i>Mensuel</div>
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'virt' ? (window.playerSortOrder === 1 ? '-numeric-up' : '-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'virt' ? '1' : '0.3'}"></i>Mensuel</div>
                     </div>
                     <div class="stat-group" onclick="setPlayerSort('ph1')">
-                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'ph1' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph1' ? '1' : '0.3'}"></i>Ph. 1</div>
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'ph1' ? (window.playerSortOrder === 1 ? '-numeric-up' : '-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph1' ? '1' : '0.3'}"></i>Ph. 1</div>
                     </div>
                     <div class="stat-group" onclick="setPlayerSort('ph2')">
-                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'ph2' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph2' ? '1' : '0.3'}"></i>Ph. 2</div>
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'ph2' ? (window.playerSortOrder === 1 ? '-numeric-up' : '-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'ph2' ? '1' : '0.3'}"></i>Ph. 2</div>
                     </div>
                     <div class="stat-group" onclick="setPlayerSort('prog')">
-                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'prog' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog' ? '1' : '0.3'}"></i>Mois</div>
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'prog' ? (window.playerSortOrder === 1 ? '-numeric-up' : '-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog' ? '1' : '0.3'}"></i>Mois</div>
                     </div>
                     <div class="stat-group" onclick="setPlayerSort('prog_ann')">
-                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'prog_ann' ? (window.playerSortOrder===1?'-numeric-up':'-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog_ann' ? '1' : '0.3'}"></i>Année</div>
+                        <div class="stat-label"><i class="fas fa-sort${window.playerSortCol === 'prog_ann' ? (window.playerSortOrder === 1 ? '-numeric-up' : '-numeric-down') : ''}" style="margin-right: 4px; opacity: ${window.playerSortCol === 'prog_ann' ? '1' : '0.3'}"></i>Année</div>
                     </div>
                 </div>
             </div>
@@ -3149,14 +3502,14 @@ window.renderPlayers = function () {
         const progAnn = parseInt(p.prog_ann) || 0;
         const ph1 = parseInt(p.ph1) || '-';
         const ph2 = parseInt(p.ph2) || '-';
-        
+
         // Couleurs par genre
         const isFemale = (p.sexe === 'F');
         const genderClass = isFemale ? 'pts-gender-f' : 'pts-gender-m';
         const genderTitle = isFemale ? 'Joueuse' : 'Joueur';
-        
+
         const isOpen = state.activeHistoryLicence === p.licence;
-        
+
         return `
             <div class="player-wrapper">
                 <div class="player-item" onclick="togglePlayerHistory('${p.licence}')">
@@ -3174,14 +3527,14 @@ window.renderPlayers = function () {
                     </div>
                     <div class="player-stats-grid">
                         <div class="stat-group"><div class="stat-label">Officiel</div><div class="stat-value ${genderClass}" title="${genderTitle}">${ptsOff}</div></div>
-                        <div class="stat-group"><div class="stat-label">Mensuel</div><div class="stat-value stat-value-mensuel">${Math.round(ptsMens)} <small class="stat-prog-small ${progMens>=0?'stat-prog-up':'stat-prog-down'}">${progMens>=0?'+':''}${Math.round(progMens)}</small></div></div>
+                        <div class="stat-group"><div class="stat-label">Mensuel</div><div class="stat-value stat-value-mensuel">${Math.round(ptsMens)} <small class="stat-prog-small ${progMens >= 0 ? 'stat-prog-up' : 'stat-prog-down'}">${progMens >= 0 ? '+' : ''}${Math.round(progMens)}</small></div></div>
                         <div class="stat-group"><div class="stat-label">Ph. 1</div><div class="stat-value stat-value-muted">${ph1}</div></div>
                         <div class="stat-group"><div class="stat-label">Ph. 2</div><div class="stat-value stat-value-muted">${ph2}</div></div>
                         <div class="stat-group"><div class="stat-label">Mois</div><div class="stat-value ${progMens >= 0 ? 'prog-up' : 'prog-down'}">${progMens}</div></div>
                         <div class="stat-group"><div class="stat-label">Année</div><div class="stat-value ${progAnn >= 0 ? 'prog-up' : 'prog-down'}">${progAnn}</div></div>
                     </div>
                 </div>
-                <div class="player-history-box" id="history-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='histo' ? 'block' : 'none'}">
+                <div class="player-history-box" id="history-${p.licence}" style="display: ${isOpen && state.activeHistoryType === 'histo' ? 'block' : 'none'}">
                     <div class="history-header">
                         <span class="history-title">Historique des points</span>
                         <div class="history-btns">
@@ -3191,7 +3544,7 @@ window.renderPlayers = function () {
                     </div>
                     <div class="chart-container"><canvas id="chart-${p.licence}"></canvas></div>
                 </div>
-                <div class="player-history-box" id="matches-${p.licence}" style="display: ${isOpen && state.activeHistoryType==='matches' ? 'block' : 'none'}">
+                <div class="player-history-box" id="matches-${p.licence}" style="display: ${isOpen && state.activeHistoryType === 'matches' ? 'block' : 'none'}">
                     <div class="history-header">
                         <span class="history-title">Dernières Parties</span>
                         <div class="history-btns">
@@ -3206,7 +3559,7 @@ window.renderPlayers = function () {
             </div>
         `;
     }).join('');
-    
+
     elements.playersList.innerHTML = html;
 
     // Restaurer l'historique ou les matchs
@@ -3263,7 +3616,7 @@ window.togglePlayerMatches = async function (licence, forceClose = false) {
 window.loadPlayerMatches = async function (licence) {
     const container = document.getElementById(`match-list-${licence}`);
     if (!container) return;
-    
+
     try {
         const data = await fetchData('getPlayerMatches', { licence });
         const matches = data.matches || data.partie;
@@ -3272,7 +3625,7 @@ window.loadPlayerMatches = async function (licence) {
             container.innerHTML = '<div class="loading-placeholder">Aucun match trouvé pour cette phase.</div>';
             return;
         }
-        
+
         // Log du premier match pour aider l'utilisateur à identifier les clés
         console.log("Structure d'un match FFTT détectée :", matches[0]);
 
@@ -3282,7 +3635,7 @@ window.loadPlayerMatches = async function (licence) {
         // Groupement par Date + Épreuve
         let html = '';
         let currentGroupKey = '';
-        
+
         matches.forEach(m => {
             const mDate = m.date;
             const mEpreuve = m.epreuve;
@@ -3292,10 +3645,10 @@ window.loadPlayerMatches = async function (licence) {
                 currentGroupKey = groupKey;
                 html += `<div class="match-date-group">${mDate} - ${mEpreuve}</div>`;
             }
-            
+
             // --- MAPPING SELON DOC SMARTPING 2.0 (xml_partie_mysql.php) ---
             const mNom = m.advnompre || m.nom || "Inconnu";
-            
+
             // Gestion spéciale des Numérotés (N°1, N°150...)
             let mClastRaw = (m.advclaof || m.clast || m.classement || "").toString().trim();
             let mClastLabel = mClastRaw;
@@ -3313,9 +3666,9 @@ window.loadPlayerMatches = async function (licence) {
                 if (n >= 500) foundPoints = n;
             });
 
-            const isNumbered = (foundRank !== null && foundRank < 500) || 
-                               (mClastRaw.toUpperCase().includes('N') && foundRank !== null && foundRank < 1000);
-            
+            const isNumbered = (foundRank !== null && foundRank < 500) ||
+                (mClastRaw.toUpperCase().includes('N') && foundRank !== null && foundRank < 1000);
+
             if (isNumbered) {
                 const rank = foundRank || "?";
                 const pts = foundPoints || Math.max(2100, 3100 - (parseInt(rank) * 1.0) || 0);
@@ -3327,10 +3680,10 @@ window.loadPlayerMatches = async function (licence) {
             }
 
             const mVicRaw = (m.vd || m.vic || m.victoire || "").toString().toUpperCase();
-            const isVic = mVicRaw.startsWith('V'); 
+            const isVic = mVicRaw.startsWith('V');
             const mCoef = parseFloat(m.coefchamp || m.coef || m.coeff || m.coefficient || 1.0);
             let mPts = parseFloat(m.pointres || m.pts || m.pointselo);
-            
+
             // On cherche AUSSI les sets via scan de clés (fallback si pas dans champ explicite)
             let playerSets = [];
             let opponentSets = [];
@@ -3428,7 +3781,7 @@ window.loadPlayerMatches = async function (licence) {
 window.loadPlayerHistory = async function (licence) {
     const canvas = document.getElementById(`chart-${licence}`);
     if (!canvas || state.charts[licence]) return;
-    
+
     const today = new Date();
     const monthLabel = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     const cacheKey = `ttcav_histo_v3_${licence}_${monthLabel}`;
@@ -3453,20 +3806,20 @@ window.loadPlayerHistory = async function (licence) {
                 type: 'line',
                 data: {
                     labels: historyData.map(h => getVal(h.saison).replace('Saison ', '')),
-                    datasets: [{ 
-                        label: 'Points', 
-                        data: historyData.map(h => parseInt(getVal(h.point)) || 0), 
-                        borderColor: '#ef4444', 
+                    datasets: [{
+                        label: 'Points',
+                        data: historyData.map(h => parseInt(getVal(h.point)) || 0),
+                        borderColor: '#ef4444',
                         backgroundColor: '#ef4444',
                         borderWidth: 3,
                         pointBackgroundColor: '#ef4444',
                         pointBorderWidth: 2,
                         pointRadius: 4,
-                        tension: 0.3 
+                        tension: 0.3
                     }]
                 },
-                options: { 
-                    responsive: true, 
+                options: {
+                    responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
                         legend: { display: false },
@@ -3479,7 +3832,7 @@ window.loadPlayerHistory = async function (licence) {
                                 title: (tooltipItems) => {
                                     const idx = tooltipItems[0].dataIndex;
                                     const rawLabel = getVal(historyData[idx].saison);
-                                    
+
                                     // Détection ultra-robuste de la phase (chiffres, romains, ou simple position)
                                     let phNum = "";
                                     if (/(ph|phase).*(1|I)/i.test(rawLabel) || /\(1\)/.test(rawLabel) || /1$/.test(rawLabel)) phNum = "1";
@@ -3495,16 +3848,16 @@ window.loadPlayerHistory = async function (licence) {
                         }
                     },
                     scales: {
-                        x: { 
+                        x: {
                             grid: { color: 'rgba(255,255,255,0.05)', tickColor: 'transparent' },
                             ticks: {
                                 maxRotation: 0,
                                 autoSkip: false,
-                                callback: function(value, index, values) {
+                                callback: function (value, index, values) {
                                     const label = this.getLabelForValue(value);
                                     const isPh1 = /ph.*1/i.test(label) || /phase.*1/i.test(label);
                                     const isPh2 = /ph.*2/i.test(label) || /phase.*2/i.test(label);
-                                    
+
                                     // On affiche l'année pour la Phase 1 (ou au moins 1 fois sur 2 si pas de phase détectée)
                                     if (isPh1 || (!isPh2 && index % 2 === 0)) {
                                         const yMatch = label.match(/20\d\d/);
@@ -3527,7 +3880,7 @@ window.loadPlayerHistory = async function (licence) {
 };
 
 // ===== GESTION ÉDITION DES POINTS EN DIRECT =====
-window.openPointsEditorModal = function(matchID) {
+window.openPointsEditorModal = function (matchID) {
     const mData = state.matchDataRegistry[matchID];
     if (!mData) return;
 
@@ -3539,7 +3892,7 @@ window.openPointsEditorModal = function(matchID) {
         modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity 0.2s;';
         document.body.appendChild(modal);
     }
-    
+
     let html = `
     <div class="points-editor-content" id="points-editor-content">
         <h2 class="points-editor-title">
@@ -3549,7 +3902,7 @@ window.openPointsEditorModal = function(matchID) {
         <p class="points-editor-desc">Modifiez les points pour recalculer le rapport. Naviguez avec Tab.</p>
         <div class="points-editor-list">
     `;
-    
+
     const addPlayerInput = (j) => {
         if (!j || !j.nom) return '';
         const currentVal = Math.round(j.calcPoints);
@@ -3560,10 +3913,10 @@ window.openPointsEditorModal = function(matchID) {
             </div>
         `;
     };
-    
+
     mData.jouas.forEach(j => html += addPlayerInput(j));
     mData.joubs.forEach(j => html += addPlayerInput(j));
-    
+
     html += `
         </div>
         <div class="pe-footer">
@@ -3572,7 +3925,7 @@ window.openPointsEditorModal = function(matchID) {
         </div>
     </div>
     `;
-    
+
     modal.innerHTML = html;
     modal.style.display = 'flex';
     setTimeout(() => {
@@ -3583,10 +3936,10 @@ window.openPointsEditorModal = function(matchID) {
     }, 10);
 };
 
-window.savePointsEditorModal = async function() {
+window.savePointsEditorModal = async function () {
     const inputs = document.querySelectorAll('.pe-input');
     state.customPlayerPoints = state.customPlayerPoints || {};
-    
+
     inputs.forEach(input => {
         const nom = input.getAttribute('data-nom');
         const val = parseFloat(input.value);
@@ -3596,10 +3949,10 @@ window.savePointsEditorModal = async function() {
             delete state.customPlayerPoints[nom];
         }
     });
-    
+
     // Sauvegarder dans localStorage et API
     localStorage.setItem('ttcav_custom_points', JSON.stringify(state.customPlayerPoints));
-    
+
     const formData = new URLSearchParams();
     formData.append('data', JSON.stringify(state.customPlayerPoints));
     fetch('api.php?action=saveCustomPoints', {
@@ -3607,18 +3960,18 @@ window.savePointsEditorModal = async function() {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData
     }).catch(e => console.error("Erreur saveCustomPoints API", e));
-    
+
     // Fermer modale
     const modal = document.getElementById('points-editor-modal');
     if (modal) {
         modal.style.opacity = '0';
         setTimeout(() => modal.style.display = 'none', 200);
     }
-    
+
     await triggerRepaintAfterEdit();
 };
 
-window.restoreSavedPlayerPoints = async function() {
+window.restoreSavedPlayerPoints = async function () {
     try {
         const response = await fetch('api.php?action=getCustomPoints');
         const data = await response.json();
@@ -3636,7 +3989,7 @@ window.restoreSavedPlayerPoints = async function() {
     }
 };
 
-window.resetPlayerPointsFromAPI = async function(mode) {
+window.resetPlayerPointsFromAPI = async function (mode) {
     let modeText = mode === 'officiel' ? 'officiels' : 'mensuels';
     state.customPlayerPoints = {};
     state.apiPointsMode = mode;
@@ -3644,7 +3997,7 @@ window.resetPlayerPointsFromAPI = async function(mode) {
     Object.keys(localStorage).forEach(k => {
         if (k.startsWith('ttcav_mensuel_')) localStorage.removeItem(k);
     });
-    
+
     showToast(`Mise à jour depuis FFTT (${modeText})...`);
     await triggerRepaintAfterEdit(true);
 };
@@ -3652,17 +4005,17 @@ window.resetPlayerPointsFromAPI = async function(mode) {
 async function triggerRepaintAfterEdit(forceRefresh = false) {
     const exportContainer = elements.exportContainer;
     if (!exportContainer) return;
-    
+
     const currentScroll = exportContainer.scrollTop;
     const isGlobal = !!document.getElementById('summary-top');
-    
+
     try {
         if (isGlobal) {
             await copyAllMatchesToWordPress(forceRefresh);
         } else if (state.currentMatchResIndex !== null && state.currentMatchResIndex !== undefined) {
             await showMatchDetails(state.currentMatchResIndex, forceRefresh);
         }
-        
+
         if (exportContainer) {
             setTimeout(() => {
                 exportContainer.scrollTop = currentScroll;
