@@ -13,12 +13,15 @@ ob_start();
 
 header('Content-Type: application/json; charset=utf-8');
 
-// Get credentials from request
-$appId = $_GET['appId'] ?? '';
-$appKey = $_GET['appKey'] ?? '';
-$serial = $_GET['serial'] ?? '';
-$clubId = $_GET['clubId'] ?? '';
-$action = $_GET['action'] ?? '';
+// Charger les variables d'environnement
+require_once __DIR__ . '/env_loader.php';
+
+// Paramètres de l'API (Priorité : Requête > .env > Défaut)
+$appId = $_GET['appId'] ?? $_POST['appId'] ?? $_ENV['FFTT_APP_ID'] ?? '';
+$appKey = $_GET['appKey'] ?? $_POST['appKey'] ?? $_ENV['FFTT_APP_KEY'] ?? '';
+$clubId = $_GET['clubId'] ?? $_POST['clubId'] ?? $_ENV['FFTT_CLUB_ID'] ?? '';
+$serial = $_GET['serial'] ?? $_POST['serial'] ?? $_ENV['FFTT_SERIAL'] ?? 'ABCDEFGHIJKLMNO';
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 // Configuration du cache
 $cacheDir = __DIR__ . '/cache';
@@ -27,8 +30,6 @@ if (!is_dir($cacheDir)) {
 }
 $cacheDuration = 86400; // 24 heures
 $bypassCache = (isset($_GET['refresh']) && $_GET['refresh'] == '1') 
-               || ($action === 'getPlayerDetail') 
-               || ($action === 'getMatchPlayers')
                || ($action === 'clearCache')
                || ($action === 'saveCustomPoints')
                || ($action === 'getCustomPoints');
@@ -57,7 +58,7 @@ if (!$action || ((!$appId || !$appKey) && !in_array($action, ['saveCustomPoints'
     exit;
 }
 
-$baseUrl = 'http://www.fftt.com/mobile/pxml/';
+$baseUrl = 'https://www.fftt.com/mobile/pxml/';
 
 // Signature calculation
 $tm = date('YmdHis') . substr(microtime(), 2, 3);
@@ -92,7 +93,7 @@ function fetchData($url, $params)
 
 $params = [
     'id' => $appId,
-    'serie' => substr($serial ?: $appId, 0, 15),
+    'serie' => (empty($serial) || $serial === 'undefined') ? 'ABCDEFGHIJKLMNO' : substr($serial, 0, 15),
     'tm' => $tm,
     'tmc' => $tmc
 ];
@@ -228,12 +229,16 @@ switch ($action) {
         echo json_encode(['success' => true]);
         exit;
     case 'getPlayerDetail':
-        $params['licence'] = $_GET['licence'] ?? '';
+        $lic = $_GET['licence'] ?? '';
+        $params['licence'] = $lic;
+        $params['numlic'] = $lic; // Certains endpoints préfèrent numlic
         $xml = fetchData($baseUrl . 'xml_joueur.php', $params);
+        @file_put_contents(__DIR__ . '/last_joueur_debug.xml', $xml);
         break;
     case 'getMatchPlayers':
         $params['renc_id'] = $_GET['renc_id'] ?? '';
         $xml = fetchData($baseUrl . 'xml_joueur_renc.php', $params);
+        @file_put_contents(__DIR__ . '/last_players_debug.xml', $xml);
         break;
     case 'saveCustomPoints':
         $jsonStr = $_POST['data'] ?? '';
@@ -247,6 +252,17 @@ switch ($action) {
         }
         ob_clean();
         echo json_encode(['error' => 'Invalid data']);
+        exit;
+    case 'getServerConfig':
+        ob_clean();
+        echo json_encode([
+            'appId' => $_ENV['FFTT_APP_ID'] ?? '',
+            'clubId' => $_ENV['FFTT_CLUB_ID'] ?? '',
+            'serial' => $_ENV['FFTT_SERIAL'] ?? 'ABCDEFGHIJKLMNO',
+            'groqKey' => $_ENV['FFTT_GROQ_KEY'] ?? $_ENV['GROQ_KEY'] ?? '', // Supporte les deux noms
+            'groqModel' => $_ENV['FFTT_GROQ_MODEL'] ?? $_ENV['GROQ_MODEL'] ?? 'llama-3.3-70b-versatile',
+            'hasAppKey' => !empty($_ENV['FFTT_APP_KEY'])
+        ]);
         exit;
     case 'getCustomPoints':
         $file = $cacheDir . '/custom_points/points.json';

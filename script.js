@@ -9,6 +9,7 @@ const state = {
     clubId: localStorage.getItem('fftt_clubId') || '',
     groqKey: localStorage.getItem('groq_key') || '',
     groqModel: localStorage.getItem('groq_model') || 'llama-3.3-70b-versatile',
+    serial: localStorage.getItem('fftt_serial') || 'ABCDEFGHIJKLMNO',
     teams: [],
     matchdays: [],
     results: [],
@@ -63,7 +64,23 @@ const setupListener = (id, callback) => {
 };
 
 // ===== INITIALISATION SÉCURISÉE =====
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+    // Tenter de charger la config serveur (.env)
+    try {
+        const resp = await fetch('api.php?action=getServerConfig');
+        const config = await resp.json();
+        if (config && !config.error) {
+            if (config.appId) state.appId = config.appId;
+            if (config.appKey) state.appKey = config.appKey;
+            if (config.clubId) state.clubId = config.clubId;
+            if (config.serial) state.serial = config.serial;
+            if (config.groqKey) state.groqKey = config.groqKey;
+            logDebug("Configuration chargée depuis le serveur (.env)", "success");
+        }
+    } catch (e) {
+        console.warn("Impossible de charger la config serveur:", e);
+    }
+
     try {
         // ===== TABS LOGIC =====
         const tabBtns = document.querySelectorAll('.tab-btn');
@@ -93,6 +110,13 @@ window.addEventListener('load', () => {
         safeSetVal('input-club-id', state.clubId);
         safeSetVal('input-groq-key', state.groqKey);
         safeSetVal('select-groq-model', state.groqModel);
+
+        // Indicateur visuel pour la config serveur
+        if (state.appId) {
+            document.querySelectorAll('.settings-field input').forEach(input => {
+                if (input.value) input.style.borderColor = '#10b981';
+            });
+        }
 
         // Debug checkbox
         const debugCheckbox = document.getElementById('input-show-debug');
@@ -279,43 +303,39 @@ function getCurrentFFTTMonthLabel() {
 
 function getMonthlyPoints(fullName, licence = null) {
     const monthLabel = getCurrentFFTTMonthLabel();
+    const searchNorm = fullName ? norm(fullName) : null;
 
-    // 1. D'abord par licence dans le localStorage persistant
+    // 1. Recherche par LICENCE (Le plus fiable)
     if (licence) {
+        // a. Cache persistant (localStorage)
         const cached = localStorage.getItem(`ttcav_mensuel_${licence}_${monthLabel}`);
         if (cached) return parseFloat(cached);
 
-        if (state.playerDetailsCache[licence]) return state.playerDetailsCache[licence].points;
+        // b. Cache session (Live API)
+        if (state.playerDetailsCache && state.playerDetailsCache[licence]) {
+            return state.playerDetailsCache[licence].points;
+        }
     }
 
-    // 2. Recherche par NOM (fallback moins précis)
-    if (fullName) {
-        const searchNorm = norm(fullName);
+    // 2. Recherche par NOM (Si licence absente ou non trouvée)
+    if (searchNorm) {
+        // a. D'abord dans le CACHE SESSION (Live API) - Priorité car plus précis (xml_joueur.php)
+        if (state.playerDetailsCache) {
+            const entry = Object.values(state.playerDetailsCache).find(e => norm(e.nom) === searchNorm);
+            if (entry) return entry.points;
+        }
 
-        // Dans state.players
+        // b. Puis dans le ROSTER CLUB (state.players)
         if (state.players) {
             const p = state.players.find(x => {
                 const combinedNorm = norm(x.nom + (x.prenom || ''));
-                return combinedNorm.includes(searchNorm) || searchNorm.includes(combinedNorm);
+                return combinedNorm === searchNorm || combinedNorm.includes(searchNorm) || searchNorm.includes(combinedNorm);
             });
             if (p) {
                 const cachedP = localStorage.getItem(`ttcav_mensuel_${p.licence}_${monthLabel}`);
                 if (cachedP) return parseFloat(cachedP);
-                return p.points_mensuels || p.points_officiels || p.points;
+                return (state.apiPointsMode === 'officiel' ? p.points_officiels : p.points_mensuels) || p.points_mensuels || p.points_officiels || 0;
             }
-        }
-
-        // Dans cache session
-        if (state.playerDetailsCache) {
-            const cachedEntry = Object.values(state.playerDetailsCache).find(entry => {
-                if (!entry.nom) return false;
-                const combinedNorm = norm(entry.nom);
-                // Match exact ou partiel dans les deux sens
-                return combinedNorm === searchNorm ||
-                    combinedNorm.includes(searchNorm) ||
-                    searchNorm.includes(combinedNorm);
-            });
-            if (cachedEntry) return cachedEntry.points;
         }
     }
 
@@ -424,13 +444,14 @@ async function fetchData(action, extraParams = {}, forceRefresh = false, postDat
     const params = new URLSearchParams({
         appId: state.appId,
         appKey: state.appKey,
-        serial: state.serial,
+        serial: state.serial || 'ABCDEFGHIJKLMNO',
         clubId: state.clubId,
         action: action,
         ...extraParams
     });
 
     if (forceRefresh) params.append('refresh', '1');
+    console.log(`[FFTT API] Fetching action: ${action} with params:`, extraParams);
 
     const options = {
         method: postData ? 'POST' : 'GET',
@@ -1026,41 +1047,29 @@ async function showMatchDetails(index) {
 
         // --- NOUVEAU : Récupération des licences et points mensuels (Villefranche + Adversaires) ---
         try {
-            updateLoaderStep(`Récupération des licences de la rencontre...`);
-            const dataPlayers = await fetchData('getMatchPlayers', { renc_id });
-            if (dataPlayers && dataPlayers.joueur) {
-                const plist = Array.isArray(dataPlayers.joueur) ? dataPlayers.joueur : [dataPlayers.joueur];
+            if (data && data.joueur) {
+                const plist = Array.isArray(data.joueur) ? data.joueur : [data.joueur];
                 if (!state.playerDetailsCache) state.playerDetailsCache = {};
 
                 for (const pj of plist) {
+                    const processPlayer = async (lic, nom) => {
+                        if (lic && (!state.playerDetailsCache[lic])) {
+                            updateLoaderStep(`Points mensuels : ${nom}...`);
+                            const pDet = await fetchData('getPlayerDetail', { licence: lic }, true);
+                            const pData = (pDet && pDet.joueur) ? pDet.joueur : pDet;
+                            if (pData && (pData.point !== undefined || pData.valcla !== undefined)) {
+                                state.playerDetailsCache[lic] = {
+                                    points: parseFloat(pData.point || pData.valcla || 0),
+                                    nom: nom
+                                };
+                                logDebug(`Sync Live: ${nom} (${lic}) -> ${state.playerDetailsCache[lic].points}`);
+                            }
+                        }
+                    };
                     // Côté A
-                    const licA = pj.xla || pj.licence || '';
-                    const nomA = (pj.xja || pj.nom || '').trim();
-                    if (licA) {
-                        updateLoaderStep(`Points mensuels : ${nomA}...`);
-                        const pDet = await fetchData('getPlayerDetail', { licence: licA }, true);
-                        if (pDet && pDet.joueur) {
-                            state.playerDetailsCache[licA] = {
-                                points: parseFloat(pDet.joueur.point || 0),
-                                nom: nomA
-                            };
-                            logDebug(`Sync Live: ${nomA} (${licA}) -> ${state.playerDetailsCache[licA].points}`);
-                        }
-                    }
+                    await processPlayer(pj.xla || pj.licence || '', (pj.xja || pj.nom || '').trim());
                     // Côté B
-                    const licB = pj.xlb || '';
-                    const nomB = (pj.xjb || '').trim();
-                    if (licB) {
-                        updateLoaderStep(`Points mensuels : ${nomB}...`);
-                        const pDet = await fetchData('getPlayerDetail', { licence: licB }, true);
-                        if (pDet && pDet.joueur) {
-                            state.playerDetailsCache[licB] = {
-                                points: parseFloat(pDet.joueur.point || 0),
-                                nom: nomB
-                            };
-                            logDebug(`Sync Live: ${nomB} (${licB}) -> ${state.playerDetailsCache[licB].points}`);
-                        }
-                    }
+                    await processPlayer(pj.xlb || '', (pj.xjb || '').trim());
                 }
             }
         } catch (err) {
@@ -1084,10 +1093,10 @@ async function showMatchDetails(index) {
                     <button onclick="copyWPHTMLToClipboard()" class="btn-copy">📋 Copier HTML (Gutenberg)</button>
                     <button onclick="document.getElementById('export-container').style.display='none'" class="secondary btn-close-export">✕ Fermer</button>
                 </div>
-                ${getMatchDetailsHTML(res, data, false, rankingData, dataPlayers)}
+                ${getMatchDetailsHTML(res, data, false, rankingData, null)}
             `;
             // On prépare aussi la version brute pour le bouton copier
-            state.giantHTMLRaw = getMatchDetailsHTML(res, data, true, rankingData, dataPlayers);
+            state.giantHTMLRaw = getMatchDetailsHTML(res, data, true, rankingData, null);
             // Affichage identique à l'ancienne version fonctionnelle
             state.currentMatchResIndex = resIndex;
             elements.exportContainer.style.cssText = "display: block; position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: 5000; background: rgba(0,0,0,0.8); overflow-y: auto; padding: 40px 20px;";
@@ -1120,7 +1129,9 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
         const summaryLabel = `Bilan ${currentPhaseText}`;
 
         const nameCache = JSON.parse(localStorage.getItem('ttcav_names_cache_v4') || '{}');
-        const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
+        const params = new URLSearchParams(res.detailLink.includes('?') ? res.detailLink.split('?')[1] : res.detailLink);
+        const rencID = params.get('renc_id') || params.get('res_id') || '';
+        const matchID = 'match-' + rencID + '-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
 
         // Détection ultra-robuste locale pour contrer les inversions de l'API FFTT entre la liste et le détail
         const clean = (s) => norm(s).replace(/ttcav|tt|cp|as|es|ep|pong|avenir|st|saint|ping/gi, '').replace(/\s+/g, '');
@@ -1867,7 +1878,7 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
             const wpGallery = `<!-- wp:gallery {"columns":1,"linkTo":"none","className":"columns-default"} -->\n<figure class="wp-block-gallery has-nested-images columns-1 is-cropped columns-default"></figure>\n<!-- /wp:gallery -->`;
 
             // 6. Tableaux et Bilans (HTML) + Séparateur (Fusionnés)
-            const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>\n<div class="back-to-top-wrapper" style="margin-top: 40px;"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>\n</div>\n</div><!-- Fermeture de match-export-card -->\n<div class="match-separator"></div>\n<!-- /wp:html -->`;
+            const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="back-to-top-wrapper" style="margin-top: 40px;"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>\n</div>\n</div><!-- Fermeture de match-export-card -->\n<div class="match-separator"></div>\n<!-- /wp:html -->`;
 
             // LE WRAPPER "CARD" (Groupe WordPress avec alignement large)
             const cardStart = `<!-- wp:group {"align":"wide","className":"match-export-card","layout":{"type":"constrained"}} -->\n<div class="wp-block-group alignwide match-export-card">`;
@@ -1912,7 +1923,6 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
                 <div id="league-ranking-container-${matchID}">
                     ${rankingSectionHTML}
                 </div>
-                <div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>
                 <div class="back-to-top-wrapper"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>
             </div>
             <div class="match-separator"></div>
@@ -1984,27 +1994,28 @@ async function generateAISummaryClickHandler(matchID = null, forceRegen = false)
             else if (s.double === 'D') res += ' + Double perdu';
             return res;
         }).join(', ') || 'N/A';
-        const ourClubName = matchData.isHome ? "Villefranche TTCAV" : matchData.teamB;
+        const ourClubName = "Villefranche TTCAV"; // On force le nom du club pour l'IA
+        const ourTeamWithNumber = matchData.ourTeamName || ourClubName;
         const opponentName = matchData.isHome ? matchData.teamB : matchData.teamA;
         const ourScore = matchData.isHome ? matchData.scoreA : matchData.scoreB;
         const oppScore = matchData.isHome ? matchData.scoreB : matchData.scoreA;
 
-        const prompt = `Tu es un journaliste sportif spécialisé dans le tennis de table pour le club ${ourClubName}. 
-        Rédige un court paragraphe percutant (environ 3-4 phrases) pour résumer cette rencontre de championnat.
+        const prompt = `Tu es un journaliste sportif passionné pour le club de tennis de table "${ourClubName}".
+        Rédige un court paragraphe percutant (3-4 phrases) pour résumer la rencontre de notre équipe "${ourTeamWithNumber}".
         
         Détails de la rencontre :
-        - Notre club (${matchData.isHome ? 'à domicile' : 'à l\'extérieur'}) : ${ourClubName}
-        - Adversaire : ${opponentName}
-        - Score Final : ${ourScore} pour nous, ${oppScore} pour l'adversaire.
+        - Match : ${matchData.teamA} contre ${matchData.teamB}
+        - Nous sommes : ${matchData.isHome ? 'à Domicile' : 'à l\'Extérieur'}
+        - Notre Score : ${ourScore}
+        - Score de l'adversaire (${opponentName}) : ${oppScore}
         - Division : ${matchData.category}
-        - Stats de nos joueurs de ${ourClubName} : ${statsStr}
+        - Stats de nos joueurs : ${statsStr}
         
         Instructions :
-        - Sois enthousiaste si on a gagné (notre score > score adverse), encourageant sinon.
-        - Mets en avant les joueurs ayant fait un sans-faute (ex: 3V/0D).
-        - IMPORTANT : N'utilise QUE les PRÉNOMS des joueurs de notre club (ex: "Ethan" au lieu de "Ethan GILLE").
-        - Utilise un ton de club local passionné. NE mentionne PAS que tu es une IA.
-        - Réponds directement par le paragraphe, sans introduction ni guillemets.`;
+        - Le ton doit être celui d'un club local fier de ses couleurs.
+        - Sois enthousiaste en cas de victoire, encourageant en cas de défaite ou de nul.
+        - IMPORTANT : N'utilise QUE les PRÉNOMS des joueurs de notre club.
+        - Réponds directement par le paragraphe.`;
 
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
@@ -2048,7 +2059,6 @@ async function generateAISummaryClickHandler(matchID = null, forceRegen = false)
         btn.innerHTML = originalContent;
     }
 }
-
 // ===== CLIPBOARD =====
 function copyWPHTMLToClipboard() {
     const rawContent = elements.exportPanel.cloneNode(true);
@@ -2066,6 +2076,11 @@ function copyWPHTMLToClipboard() {
 async function copyAllMatchesToWordPress(forceRefresh = false) {
     if (state.results.length === 0) return showToast('Générez d\'abord les résultats.', true);
 
+    // S'assurer que les joueurs du club sont chargés (pour le lookup des licences)
+    if (state.players.length === 0) {
+        await loadPlayers(false);
+    }
+
     setAppBusy(true);
     updateLoaderStep('Préparation de l\'export global...');
 
@@ -2081,7 +2096,9 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
     // Pré-chargement du cache en parallèle
     try {
         const cachePromises = state.results.map(async (res) => {
-            const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
+            const params = new URLSearchParams(res.detailLink.includes('?') ? res.detailLink.split('?')[1] : res.detailLink);
+            const rencID = params.get('renc_id') || params.get('res_id') || '';
+            const matchID = 'match-' + rencID + '-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
             if (!state.aiSummaries[matchID]) {
                 const cache = await fetchData('getSummary', { matchId: matchID });
                 if (cache && cache.text) {
@@ -2115,8 +2132,9 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
             <p class="export-main-subtitle">${elements.selectDay.value} — ${state.results.length} rencontres</p>
         </div>
     `;
+    console.log(`DEBUG: Démarrage de l'export global. state.results length = ${state.results.length}`);
     state.giantHTMLRaw = '';
-
+    
     try {
         let loadedCount = 0;
         updateLoaderStep(`Préparation de l'export (${loadedCount}/${state.results.length})...`);
@@ -2126,39 +2144,61 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
             const is_retour = linkParams.get('is_retour') || '0';
             const renc_id = linkParams.get('renc_id') || linkParams.get('res_id') || '';
 
-            const [detailsData, classData, dataPlayers] = await Promise.all([
+            const [detailsData, classData] = await Promise.all([
                 fetchData('getMatchDetails', { is_retour, renc_id }, forceRefresh),
-                res.divisionId && res.pouleId ? fetchData('getClassement', { divisionId: res.divisionId, pouleId: res.pouleId }, forceRefresh) : Promise.resolve(null),
-                fetchData('getMatchPlayers', { renc_id }, forceRefresh)
+                res.divisionId && res.pouleId ? fetchData('getClassement', { divisionId: res.divisionId, pouleId: res.pouleId }, forceRefresh) : Promise.resolve(null)
             ]);
 
-            // Récupérer les détails individuels pour avoir les points mensuels exacts (<point>)
-            if (dataPlayers && dataPlayers.joueur) {
-                const plist = Array.isArray(dataPlayers.joueur) ? dataPlayers.joueur : [dataPlayers.joueur];
+            // Récupérer les détails individuels depuis detailsData pour avoir les points mensuels exacts (<point>)
+            if (detailsData && detailsData.joueur) {
+                const plist = Array.isArray(detailsData.joueur) ? detailsData.joueur : [detailsData.joueur];
                 if (!state.playerDetailsCache) state.playerDetailsCache = {};
-                for (const pj of plist) {
-                    const processPlayer = async (lic, nom) => {
-                        if (lic && (!state.playerDetailsCache[lic] || forceRefresh)) {
-                            try {
-                                const pDet = await fetchData('getPlayerDetail', { licence: lic }, forceRefresh);
-                                if (pDet && pDet.joueur) {
-                                    state.playerDetailsCache[lic] = {
-                                        points: parseFloat(pDet.joueur.point || 0),
-                                        nom: nom
-                                    };
-                                }
-                            } catch (e) { /* ignore */ }
+                
+                const playerPromises = [];
+                const processPlayer = async (lic, nom) => {
+                    let finalLic = lic;
+                    const nomClean = (nom || "").trim();
+
+                    // --- RECHERCHE DE LICENCE PAR NOM (Fallback si absent du détail) ---
+                    if (!finalLic && nomClean && state.players && state.players.length > 0) {
+                        const nNorm = norm(nomClean);
+                        const found = state.players.find(p => norm(`${p.nom} ${p.prenom}`) === nNorm || norm(`${p.prenom} ${p.nom}`) === nNorm);
+                        if (found) {
+                            finalLic = found.licence;
+                            logDebug(`Lookup: ${nomClean} -> Licence trouvée: ${finalLic}`);
                         }
-                    };
-                    await processPlayer(pj.xla || pj.licence || '', (pj.xja || pj.nom || '').trim());
-                    await processPlayer(pj.xlb || '', (pj.xjb || '').trim());
+                    }
+
+                    if (finalLic && (!state.playerDetailsCache[finalLic] || forceRefresh)) {
+                        try {
+                            const pDet = await fetchData('getPlayerDetail', { licence: finalLic }, forceRefresh);
+                            const pData = (pDet && pDet.joueur) ? pDet.joueur : pDet;
+                            if (pData && (pData.point !== undefined || pData.valcla !== undefined)) {
+                                const mPts = parseFloat(pData.point || 0);
+                                const oPts = parseFloat(pData.valcla || 0);
+                                state.playerDetailsCache[finalLic] = {
+                                    points: (state.apiPointsMode === 'officiel' ? oPts : mPts) || mPts || oPts,
+                                    nom: nomClean
+                                };
+                                logDebug(`Sync Live: ${nomClean} (${finalLic}) -> ${state.playerDetailsCache[finalLic].points}`);
+                            }
+                        } catch (e) { 
+                            console.error(`Erreur API pour ${nomClean}:`, e);
+                        }
+                    }
+                };
+
+                for (const pj of plist) {
+                    playerPromises.push(processPlayer(pj.xla || pj.licence || '', (pj.xja || pj.nom || '').trim()));
+                    playerPromises.push(processPlayer(pj.xlb || '', (pj.xjb || '').trim()));
                 }
+                await Promise.all(playerPromises);
             }
 
             loadedCount++;
             updateLoaderStep(`Chargement des données (${loadedCount}/${state.results.length}) : <br><b>${res.teamName}</b>`);
 
-            return { res, detailsData, classData, dataPlayers };
+            return { res, detailsData, classData };
         });
 
         const allResults = await Promise.all(allDataPromises);
@@ -2192,7 +2232,9 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
         });
 
         allMatches.forEach((res, index) => {
-            const matchID = 'match-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
+            const params = new URLSearchParams(res.detailLink.includes('?') ? res.detailLink.split('?')[1] : res.detailLink);
+            const rencID = params.get('renc_id') || params.get('res_id') || '';
+            const matchID = 'match-' + rencID + '-' + res.teamName.replace(/\s/g, '-') + '-' + (res.category || '').replace(/\s/g, '-');
 
             // Standardisation Villefranche TTCAV
             const getStandardName = (raw, isHome) => {
@@ -2274,11 +2316,11 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
             return numA - numB;
         });
 
-        allResults.forEach(({ res, detailsData, classData, dataPlayers }) => {
+        allResults.forEach(({ res, detailsData, classData }) => {
             if (detailsData && detailsData.resultat) {
-                const detailBlock = getMatchDetailsHTML(res, detailsData, false, classData, dataPlayers);
+                const detailBlock = getMatchDetailsHTML(res, detailsData, false, classData, null);
                 giantHTML += detailBlock;
-                state.giantHTMLRaw += getMatchDetailsHTML(res, detailsData, true, classData, dataPlayers);
+                state.giantHTMLRaw += getMatchDetailsHTML(res, detailsData, true, classData, null);
             }
         });
 
@@ -2756,7 +2798,7 @@ p.ttcav-wp-ai,
 .ttcav-export-wrapper .section-title {
     text-align: center !important;
     font-size: 20px !important; /* Utilisation de PX au lieu de REM pour éviter les variations de base du thème */
-    margin: 50px 0 20px 0 !important;
+    margin: 80px 0 35px 0 !important;
     color: #64748b !important;
     position: relative !important;
     font-family: 'Outfit', sans-serif !important;
@@ -3006,7 +3048,7 @@ p.ttcav-wp-ai,
         display: block !important;
     }
 
-    .ttcav-export-wrapper .section-title { font-size: 18px !important; margin: 35px 0 15px 0 !important; }
+    .ttcav-export-wrapper .section-title { font-size: 18px !important; margin: 55px 0 25px 0 !important; }
     .ttcav-export-wrapper .summary-totals-card { padding: 15px !important; }
     .ttcav-export-wrapper .ranking-box-val { font-size: 20px !important; }
 
@@ -3442,8 +3484,9 @@ async function syncPlayerMensuelPoints(playersArray, forceRefresh = false, silen
             try {
                 // Utilisation du bypass cache pour être sûr d'avoir le point live
                 const data = await fetchData('getPlayerDetail', { licence: p.licence }, true);
-                if (data && data.joueur) {
-                    const mPts = parseFloat(data.joueur.point || 0);
+                const pData = (data && data.joueur) ? data.joueur : data;
+                if (pData && pData.point) {
+                    const mPts = parseFloat(pData.point || 0);
                     if (mPts > 0) {
                         localStorage.setItem(`ttcav_mensuel_${p.licence}_${monthLabel}`, mPts.toFixed(2));
                         p.points_mensuels = mPts;
@@ -3519,8 +3562,9 @@ window.refreshSinglePlayerPoints = async function (licence) {
 
     try {
         const data = await fetchData('getPlayerDetail', { licence }, true);
-        if (data && data.joueur) {
-            const mPts = parseFloat(data.joueur.point || 0);
+        const pData = (data && data.joueur) ? data.joueur : data;
+        if (pData && pData.point) {
+            const mPts = parseFloat(pData.point || 0);
             const p = state.players.find(x => x.licence === licence);
             if (p) {
                 p.points_mensuels = mPts;
