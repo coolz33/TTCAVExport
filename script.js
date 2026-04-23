@@ -1091,7 +1091,7 @@ async function showMatchDetails(index) {
             // Affichage identique à l'ancienne version fonctionnelle
             state.currentMatchResIndex = resIndex;
             elements.exportContainer.style.cssText = "display: block; position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: 5000; background: rgba(0,0,0,0.8); overflow-y: auto; padding: 40px 20px;";
-            elements.exportPanel.style.cssText = "display: block; margin: 0 auto; background: white; max-width: 1000px; padding: 40px; border-radius: 12px; position: relative;";
+            elements.exportPanel.style.cssText = "display: block; margin: 0 auto; background: white; max-width: 1400px; width: 95%; padding: 40px; border-radius: 12px; position: relative;";
 
             // Trigger AI summary automatically
             setTimeout(() => {
@@ -1599,7 +1599,7 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
 
         partiesHTML = `
         <div class="section-title">La feuille de rencontre</div>
-        <table class="premium-table">
+        <table class="premium-table match-parties-table">
             <thead><tr>
                 <th class="col-player">${equipeA}</th>
                 <th class="col-player">${equipeB}</th>
@@ -1847,30 +1847,33 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
         }
 
         if (isWordPress) {
-            // WordPress BLOCK MODE
-            // 1. Titre (Heading Block) - Inclut les 2 équipes et le VS stylisé (CENTRÉ)
+            // WordPress BLOCK MODE - SEPARATE NATIVE BLOCKS WRAPPED IN A CARD (GROUP)
+            const summaryText = state.aiSummaries[matchID] || '<em>Génération du résumé...</em>';
+            const teamURL = (res.photoURL && !res.photoURL.includes('placehold.co') && res.photoURL !== 'URL_DE_VOTRE_IMAGE') ? res.photoURL : '';
+            
+            // 1. Titre (Heading)
             const wpTitle = `<!-- wp:heading {"textAlign":"center","level":1,"className":"ttcav-wp-main-title","anchor":"anchor-${matchID}"} -->\n<h1 id="anchor-${matchID}" class="has-text-align-center ttcav-wp-main-title">${equipeA} <span class="ttcav-wp-vs">VS</span> ${equipeB}</h1>\n<!-- /wp:heading -->`;
 
-            // 2. Sous-titre et Scoreboard
+            // 2. Sous-titre et Scoreboard (HTML)
             const wpHeader = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n<div class="export-subtitle">${res.category} <span class="export-match-date">(${res.date})</span></div>\n${scoreboardHTML}\n</div>\n<!-- /wp:html -->`;
 
-            // 3. Résumé IA (Paragraph Block) (CENTRÉ)
-            const summaryText = state.aiSummaries[matchID] || '<em>Génération du résumé...</em>';
+            // 3. Résumé IA (Paragraph)
             const wpAI = `<!-- wp:paragraph {"align":"center","className":"ttcav-wp-ai"} -->\n<p id="ai-summary-${matchID}" class="has-text-align-center ttcav-wp-ai">${summaryText}</p>\n<!-- /wp:paragraph -->`;
 
-            // 4. Photo d'équipe (Vide par défaut pour insertion WP)
-            const teamURL = (res.photoURL && !res.photoURL.includes('placehold.co') && res.photoURL !== 'URL_DE_VOTRE_IMAGE') ? res.photoURL : '';
+            // 4. Photo d'équipe (Image unique par rencontre)
             const wpTeamImage = `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="${teamURL}" alt="Photo d'équipe"/></figure>\n<!-- /wp:image -->`;
 
-            // 5. Photo d'action (Vide par défaut pour insertion WP)
+            // 5. Galerie additionnelle (Placeholder 1 colonne)
+            const wpGallery = `<!-- wp:gallery {"columns":1,"linkTo":"none","className":"columns-default"} -->\n<figure class="wp-block-gallery has-nested-images columns-1 is-cropped columns-default"></figure>\n<!-- /wp:gallery -->`;
 
-            const wpActionImage = `<!-- wp:image {"align":"center","sizeSlug":"large","linkDestination":"none"} -->\n<figure class="wp-block-image aligncenter size-large"><img src="" alt=""/></figure>\n<!-- /wp:image -->`;
+            // 6. Tableaux et Bilans (HTML) + Séparateur (Fusionnés)
+            const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>\n<div class="back-to-top-wrapper" style="margin-top: 40px;"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>\n</div>\n</div><!-- Fermeture de match-export-card -->\n<div class="match-separator"></div>\n<!-- /wp:html -->`;
 
-            const wpGallery = `<!-- wp:gallery {"linkTo":"none"} -->\n<figure class="wp-block-gallery has-nested-images columns-default is-cropped"></figure>\n<!-- /wp:gallery -->`;
+            // LE WRAPPER "CARD" (Groupe WordPress avec alignement large)
+            const cardStart = `<!-- wp:group {"align":"wide","className":"match-export-card","layout":{"type":"constrained"}} -->\n<div class="wp-block-group alignwide match-export-card">`;
+            const cardEnd = `</div>\n<!-- /wp:group -->`;
 
-            const wpFooter = `<!-- wp:html -->\n<div class="ttcav-export-wrapper">\n${compoHTML}\n${partiesHTML}\n<div class="match-sets-sum"><span>Les points : ${totalPointsA} / ${totalPointsB}</span> | Les manches : ${totalSetsA} - ${totalSetsB}</div>\n${statsHTML}\n${rankingSectionHTML}\n<div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>\n<div class="back-to-top-wrapper" style="margin-top: 40px;"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>\n<div class="match-separator"></div>\n</div>\n<!-- /wp:html -->`;
-
-            return `${wpTitle}\n${wpHeader}\n${wpAI}\n${wpTeamImage}\n${wpActionImage}\n${wpGallery}\n${wpFooter}`;
+            return `${cardStart}\n${wpTitle}\n${wpHeader}\n${wpAI}\n${wpTeamImage}\n${wpGallery}\n${wpFooter}\n${cardEnd}`;
         }
 
         // Modal/App View mode
@@ -1911,8 +1914,8 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
                 </div>
                 <div class="summary-footer">Bilan du match : ${finalTeamScoreA > finalTeamScoreB ? 'Victoire de ' + equipeA : (finalTeamScoreA < finalTeamScoreB ? 'Victoire de ' + equipeB : 'Match nul')}</div>
                 <div class="back-to-top-wrapper"><a href="#summary-top" class="back-to-top-btn">↑ Retour au tableau récapitulatif</a></div>
-                <div class="match-separator"></div>
             </div>
+            <div class="match-separator"></div>
         </div>
     `;
     } catch (err) {
@@ -2256,10 +2259,10 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
             </div>
         `;
 
-        giantHTML += summaryTableHTML;
+        giantHTML += summaryTableHTML + '<div class="match-separator"></div>';
 
-        // Ajout du tableau récapitulatif
-        state.giantHTMLRaw += `<!-- wp:html -->\n${summaryTableHTML}\n<div class="match-separator"></div>\n<!-- /wp:html -->\n`;
+        // Ajout du tableau récapitulatif enveloppé dans une carte large avec son séparateur fusionné
+        state.giantHTMLRaw += `<!-- wp:group {"align":"wide","className":"match-export-card","layout":{"type":"constrained"}} -->\n<div class="wp-block-group alignwide match-export-card"><!-- wp:html -->\n${summaryTableHTML}\n<div class="match-separator"></div>\n<!-- /wp:html --></div>\n<!-- /wp:group -->\n`;
 
         // On trie allResults selon le même ordre que allMatches (par division)
         allResults.sort((a, b) => {
@@ -2303,7 +2306,7 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
 
         elements.exportPanel.innerHTML = giantHTML;
         elements.exportContainer.style.cssText = "display: block; position: fixed; left: 0; top: 0; width: 100%; height: 100%; z-index: 5000; background: rgba(0,0,0,0.8); overflow-y: auto; padding: 40px 20px;";
-        elements.exportPanel.style.cssText = "display: block; margin: 0 auto; background: white; max-width: 1000px; padding: 40px; border-radius: 12px; position: relative;";
+        elements.exportPanel.style.cssText = "display: block; margin: 0 auto; background: white; max-width: 1400px; width: 95%; padding: 40px; border-radius: 12px; position: relative;";
 
         showToast('Rapport complet généré !');
 
@@ -2340,7 +2343,8 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
             if (fill) fill.style.background = '#10b981';
         };
 
-        setTimeout(processSummaries, 500);
+        // On attend la fin des résumés IA avant de libérer l'app
+        await processSummaries();
 
     } catch (e) {
         logDebug(`Erreur export global: ${e.message}`, 'error');
@@ -2472,6 +2476,43 @@ p.ttcav-wp-ai,
     line-height: 1.6 !important;
 }
 
+/* BOX DE CHAQUE RENCONTRE */
+.match-export-card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 24px !important;
+    padding: 40px !important;
+    margin: 40px auto !important;
+    width: 100% !important;
+    max-width: 1400px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04) !important;
+    overflow: hidden !important;
+}
+
+/* SÉPARATEUR DE RENCONTRE PLUS MARQUÉ */
+.match-separator {
+    height: 4px !important;
+    background: #e2e8f0 !important;
+    background: linear-gradient(to right, transparent, #cbd5e1, #cbd5e1, transparent) !important;
+    margin: 80px auto 20px !important;
+    max-width: 300px !important;
+    border-radius: 2px !important;
+    position: relative !important;
+    display: block !important;
+    clear: both !important;
+}
+.match-separator::after {
+    content: "●" !important;
+    position: absolute !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    background: #ffffff !important;
+    color: #94a3b8 !important;
+    padding: 0 15px !important;
+    font-size: 20px !important;
+}
+
 
 /* TABLES PREMIUM */
 .ttcav-export-wrapper .premium-table {
@@ -2487,6 +2528,10 @@ p.ttcav-wp-ai,
     table-layout: auto !important;
 }
 
+.ttcav-export-wrapper .match-parties-table {
+    table-layout: auto !important;
+}
+
 .ttcav-export-wrapper .premium-table th {
     background: #1e293b !important;
     color: #ffffff !important;
@@ -2499,7 +2544,7 @@ p.ttcav-wp-ai,
 }
 
 .ttcav-export-wrapper .premium-table td {
-    padding: 12px 15px !important;
+    padding: 12px 20px !important;
     border-bottom: 1px solid #f1f5f9 !important;
     border-right: 1px solid #f1f5f9 !important;
     font-size: 14px !important;
@@ -2510,12 +2555,33 @@ p.ttcav-wp-ai,
     line-height: 1.4 !important;
 }
 
+.ttcav-export-wrapper td.col-player {
+    width: 25% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+.ttcav-export-wrapper .premium-table td.col-set {
+    width: 6% !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    white-space: nowrap !important;
+}
+
+.ttcav-export-wrapper td.col-score {
+    width: 10% !important;
+}
+
+.ttcav-export-wrapper td.col-pts-diff {
+    width: 10% !important;
+}
+
 /* Éviter le passage à la ligne sur bureau */
 .ttcav-export-wrapper .col-summary-cat,
 .ttcav-export-wrapper .col-summary-score,
 .ttcav-export-wrapper .col-summary-home,
 .ttcav-export-wrapper .col-summary-away,
-.ttcav-export-wrapper .col-player,
 .ttcav-export-wrapper .player-name,
 .ttcav-export-wrapper .player-pts {
     white-space: nowrap !important;
@@ -2665,7 +2731,13 @@ p.ttcav-wp-ai,
 .ttcav-export-wrapper .col-summary-home { flex: 1 !important; text-align: right !important; }
 .ttcav-export-wrapper .col-summary-score { flex: 0 0 80px !important; text-align: center !important; font-weight: 700 !important; background: #f8fafc !important; margin: 0 10px !important; border-radius: 6px !important; padding: 5px !important; }
 .ttcav-export-wrapper .col-summary-away { flex: 1 !important; text-align: left !important; }
-.ttcav-export-wrapper .col-summary-status { text-align: right !important; text-transform: uppercase !important; font-size: 14px !important; padding: 12px 15px !important; }
+.ttcav-export-wrapper .col-summary-status {
+    width: 12%;
+    text-align: right !important;
+    text-transform: uppercase !important; 
+    font-size: 14px !important; 
+    padding: 12px 15px !important; 
+}
 
 .ttcav-export-wrapper .col-rank-num { width: 50px !important; text-align: center !important; font-weight: 800 !important; color: #64748b !important; }
 .ttcav-export-wrapper .col-rank-team { text-align: left !important; font-weight: 700 !important; }
@@ -2721,6 +2793,19 @@ p.ttcav-wp-ai,
     font-size: 15px !important;
 }
 
+.ttcav-export-wrapper .summary-footer {
+    background: #f8fafc !important;
+    color: #475569 !important;
+    padding: 25px !important;
+    border-radius: 12px !important;
+    text-align: center !important;
+    font-weight: 700 !important;
+    font-size: 18px !important;
+    margin: 40px 0 !important;
+    border: 1px solid #e2e8f0 !important;
+    font-family: 'Outfit', sans-serif !important;
+}
+
 @media (max-width: 768px) {
     h1.ttcav-wp-main-title { font-size: 24px !important; line-height: 28px !important; margin: 30px auto 10px auto !important; }
     .ttcav-wp-vs { font-size: 14px !important; margin: 10px 0 !important; }
@@ -2728,12 +2813,20 @@ p.ttcav-wp-ai,
     
     .mobile-br { display: block !important; }
     
+    .ttcav-export-wrapper {
+        padding: 0 !important;
+    }
+
     .ttcav-export-wrapper .premium-table { 
         font-size: 11px !important; 
         display: block !important;
-        width: 100% !important;
+        width: calc(100% - 4px) !important;
+        max-width: calc(100% - 4px) !important;
+        margin: 0 auto 1.5rem auto !important;
         overflow-x: auto !important;
         -webkit-overflow-scrolling: touch !important;
+        border-radius: 8px !important;
+        border: 1px solid #e2e8f0 !important;
     }
     
     /* Pas de fond alterné sur mobile */
@@ -2807,6 +2900,23 @@ p.ttcav-wp-ai,
     }
 
     /* Division avec fond gris FORCÉ et hauteur réduite */
+    .match-export-card {
+        padding: 20px 0px !important; 
+        margin: 10px 0 !important;
+        border-radius: 0 !important; /* Full width flush */
+        border: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .ttcav-export-wrapper .premium-scoreboard {
+        padding: 15px 5px !important;
+        gap: 8px !important;
+        border-radius: 8px !important;
+    }
+    .ttcav-export-wrapper .match-separator {
+        margin: 50px auto !important;
+    }
     .ttcav-export-wrapper .summary-premium-table td.col-summary-cat {
         order: 1 !important;
         width: 100% !important;
@@ -2938,16 +3048,18 @@ p.ttcav-wp-ai,
 
 /* SEPARATEUR ET ANCRES */
 .ttcav-export-wrapper .match-separator { 
-    height: 1px !important; 
-    background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important; 
-    margin: 100px auto !important; 
-    max-width: 600px !important; 
+    height: 4px !important; 
+    background: linear-gradient(to right, transparent, #cbd5e1, #cbd5e1, transparent) !important; 
+    margin: 80px auto 20px !important; 
+    max-width: 300px !important; 
     position: relative !important;
+    display: block !important;
+    clear: both !important;
     border: none !important; 
 }
 
 .ttcav-export-wrapper .match-separator::after {
-    content: "◈" !important;
+    content: "●" !important;
     position: absolute !important;
     left: 50% !important;
     top: 50% !important;
@@ -2955,7 +3067,7 @@ p.ttcav-wp-ai,
     background: white !important;
     padding: 0 15px !important;
     color: #94a3b8 !important;
-    font-size: 18px !important;
+    font-size: 20px !important;
 }
 [id^="anchor-"], #summary-top { scroll-margin-top: 120px !important; }
 
@@ -2971,6 +3083,23 @@ p.ttcav-wp-ai,
     font-weight: 700 !important;
     font-size: 14px !important;
     border: 1px solid #e2e8f0 !important;
+}
+    /* FIX POUR ÉLARGIR LA COLONNE WORDPRESS SI LE THÈME EST TROP ÉTROIT */
+    @media (min-width: 1200px) {
+        .single-post-container.col-md-8,
+        .col-md-8.single-post-container,
+        .entry-content,
+        .post-content {
+            width: 100% !important;
+            max-width: 1400px !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+            float: none !important;
+        }
+        .col-md-offset-2 {
+            margin-left: auto !important;
+        }
+    }
 }
 `;
 }

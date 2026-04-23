@@ -550,7 +550,7 @@ button.secondary:hover {
     background: #ffffff;
     color: #334155;
     padding: 3rem;
-    width: 1000px;
+    width: 1400px;
     /* Slightly wider for better tables */
     margin: 2rem auto;
     font-family: 'Outfit', -apple-system, sans-serif;
@@ -639,7 +639,7 @@ button.secondary:hover {
 }
 
 .premium-table {
-    width: 100%;
+    width: 100% !important;
     border-collapse: separate;
     border-spacing: 0;
     margin-bottom: 2rem;
@@ -647,6 +647,11 @@ button.secondary:hover {
     border-radius: 12px;
     overflow: hidden;
     background: #ffffff;
+    table-layout: auto !important;
+}
+
+.match-parties-table {
+    table-layout: auto !important;
 }
 
 .premium-table tr:first-child th:first-child {
@@ -676,7 +681,7 @@ button.secondary:hover {
 }
 
 .premium-table td {
-    padding: 12px 15px !important;
+    padding: 12px 20px !important;
     border-bottom: 1px solid #f1f5f9 !important;
     border-right: 1px solid #f1f5f9 !important;
     font-size: 14px !important;
@@ -702,21 +707,44 @@ button.secondary:hover {
 }
 
 /* Match Sheet Specifics */
-.col-player {
-    width: 30% !important;
+.premium-table td.col-player {
+    width: 25% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
     white-space: nowrap !important;
 }
 
-.col-set {
-    width: 7%;
-    text-align: center;
-    color: #64748b;
-    font-size: 0.85rem;
+.premium-table td.col-set {
+    width: 6% !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    white-space: nowrap !important;
+}
+
+.premium-table td.col-score {
+    width: 10% !important;
+}
+
+.premium-table td.col-pts-diff {
+    width: 10% !important;
 }
 
 .col-summary-status {
     width: 12%;
     text-align: right !important;
+}
+
+.summary-footer {
+    background: #f8fafc;
+    color: #475569;
+    padding: 2rem;
+    border-radius: 12px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin: 3rem 0;
+    border: 1px solid #e2e8f0;
+    font-family: 'Outfit', sans-serif;
 }
 
 .col-score {
@@ -1395,24 +1423,37 @@ button.secondary:hover {
 }
 
 .match-separator {
-    height: 1px !important;
-    background: linear-gradient(to right, transparent, #cbd5e1, transparent) !important;
-    margin: 100px auto !important;
-    max-width: 600px !important;
+    height: 4px !important;
+    background: linear-gradient(to right, transparent, #cbd5e1, #cbd5e1, transparent) !important;
+    margin: 80px auto 20px !important;
+    max-width: 300px !important;
+    border-radius: 2px !important;
     position: relative !important;
+    display: block !important;
+    clear: both !important;
     border: none !important;
 }
 
 .match-separator::after {
-    content: "◈" !important;
+    content: "●" !important;
     position: absolute !important;
     left: 50% !important;
     top: 50% !important;
     transform: translate(-50%, -50%) !important;
     background: white !important;
-    padding: 0 15px !important;
     color: #94a3b8 !important;
-    font-size: 18px !important;
+    padding: 0 15px !important;
+    font-size: 20px !important;
+}
+
+.match-detail-block {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 24px !important;
+    padding: 40px !important;
+    margin: 40px 0 !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04) !important;
+    overflow: hidden !important;
 }
 
 .ttcav-export-global {
@@ -1552,11 +1593,11 @@ a.status-nul {
 
 /* === MODAL MATCH DETAILS (APP VIEW) === */
 .app-match-wrapper {
-    background: white !important;
-    padding: 20px !important;
-    border-radius: 12px !important;
-    margin-bottom: 40px !important;
-    border-bottom: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    margin-bottom: 20px !important;
+    border: none !important;
     color: #334155 !important;
 }
 
@@ -2268,4 +2309,19 @@ a.status-nul {
 .flex-gap-4 {
     display: flex !important;
     gap: 4px !important;
+}
+
+@media (max-width: 768px) {
+    .match-detail-block {
+        padding: 20px 15px !important;
+        margin: 20px 0 !important;
+        border-radius: 16px !important;
+    }
+    .match-separator {
+        margin: 50px auto !important;
+    }
+    .premium-table td, 
+    .premium-table th { 
+        padding: 10px 8px !important; 
+    }
 }
