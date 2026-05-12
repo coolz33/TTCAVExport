@@ -8,3 +8,8 @@
 /player_cache.json
 /.DS_Store
 .env
+/cache
+/data
+/scratch
+/backup
+/*.xml

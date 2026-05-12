@@ -22,9 +22,11 @@ const state = {
     currentMatchData: null, // Compatibilité ancienne vers.
     players: [],
     playerDetailsCache: {}, // Boîte à mémoire pour les points mensuels
+    playerMatchesCache: {}, // Boîte à mémoire pour les gains/pertes réels des matches
     charts: {},
     activeHistoryLicence: null, // Pour garder le panneau ouvert lors d'un re-render
-    activeHistoryType: 'histo' // 'histo' ou 'matches'
+    activeHistoryType: 'histo', // 'histo' ou 'matches'
+    apiPointsMode: 'mensuel'    // Par défaut, on veut les points mensuels
 };
 
 // ===== UI ELEMENTS =====
@@ -133,7 +135,10 @@ window.addEventListener('load', async () => {
         });
 
         setupListener('close-settings', () => { if (elements.modalSettings) elements.modalSettings.style.display = 'none'; });
-        setupListener('btn-refresh-top', () => loadTeams(true));
+        setupListener('btn-refresh-top', () => {
+            state.nextGenerateForceRefresh = true;
+            loadTeams(true);
+        });
         setupListener('btn-help-top', () => showHelpModal());
 
         if (elements.closeHelp) {
@@ -307,13 +312,15 @@ function getMonthlyPoints(fullName, licence = null) {
 
     // 1. Recherche par LICENCE (Le plus fiable)
     if (licence) {
-        // a. Cache persistant (localStorage)
-        const cached = localStorage.getItem(`ttcav_mensuel_${licence}_${monthLabel}`);
-        if (cached) return parseFloat(cached);
-
-        // b. Cache session (Live API)
+        // a. PRIORITÉ : Cache session (Live API / Recherche en cours)
         if (state.playerDetailsCache && state.playerDetailsCache[licence]) {
             return state.playerDetailsCache[licence].points;
+        }
+
+        // b. Cache persistant (localStorage) - Ignoré si on force le rafraîchissement
+        if (!state.nextGenerateForceRefresh) {
+            const cached = localStorage.getItem(`ttcav_mensuel_${licence}_${monthLabel}`);
+            if (cached) return parseFloat(cached);
         }
     }
 
@@ -321,7 +328,17 @@ function getMonthlyPoints(fullName, licence = null) {
     if (searchNorm) {
         // a. D'abord dans le CACHE SESSION (Live API) - Priorité car plus précis (xml_joueur.php)
         if (state.playerDetailsCache) {
-            const entry = Object.values(state.playerDetailsCache).find(e => norm(e.nom) === searchNorm);
+            const entry = Object.values(state.playerDetailsCache).find(e => {
+                const en = norm(e.nom);
+                if (en === searchNorm) return true;
+                // Test inversion Nom/Prénom
+                const parts = e.nom.split(/\s+/);
+                if (parts.length >= 2) {
+                    const inverted = norm(parts.slice(1).join(' ') + ' ' + parts[0]);
+                    return inverted === searchNorm;
+                }
+                return false;
+            });
             if (entry) return entry.points;
         }
 
@@ -450,7 +467,10 @@ async function fetchData(action, extraParams = {}, forceRefresh = false, postDat
         ...extraParams
     });
 
-    if (forceRefresh) params.append('refresh', '1');
+    if (forceRefresh) {
+        params.append('refresh', '1');
+        params.append('_t', Date.now()); // Cache-buster définitif
+    }
     console.log(`[FFTT API] Fetching action: ${action} with params:`, extraParams);
 
     const options = {
@@ -485,6 +505,81 @@ async function fetchData(action, extraParams = {}, forceRefresh = false, postDat
     } catch (e) {
         logDebug(`Erreur réseau : ${e.message}`, 'error');
         return { error: 'Erreur réseau' };
+    }
+}
+
+async function syncPlayerDetails(lic, nom, forceRefresh = false) {
+    let finalLic = lic;
+    const nomClean = (nom || "").trim();
+    
+    // Fallback 1: Recherche de licence par nom dans le roster du club
+    if (!finalLic && nomClean && state.players && state.players.length > 0) {
+        const nNorm = norm(nomClean);
+        const found = state.players.find(p => norm(`${p.nom} ${p.prenom}`) === nNorm || norm(`${p.prenom} ${p.nom}`) === nNorm);
+        if (found) {
+            finalLic = found.licence;
+            logDebug(`Lookup Local: ${nomClean} -> ${finalLic}`);
+        }
+    }
+
+    // Fallback 2: Recherche de licence par nom via l'API (pour les adversaires)
+    if (!finalLic && nomClean && nomClean.length > 3) {
+        try {
+            const parts = nomClean.split(/\s+/);
+            const nomSearch = parts[0];
+            const prenomSearch = parts.slice(1).join(' ');
+            const searchData = await fetchData('searchPlayers', { nom: nomSearch, prenom: prenomSearch }, forceRefresh);
+            const players = Array.isArray(searchData?.joueur) ? searchData.joueur : (searchData?.joueur ? [searchData.joueur] : []);
+            
+            if (players.length > 0) {
+                // On prend le meilleur match (nom exact ou inversé)
+                const nNorm = norm(nomClean);
+                const match = players.find(p => {
+                    const pn = norm(`${p.nom} ${p.prenom}`);
+                    const pi = norm(`${p.prenom} ${p.nom}`);
+                    return pn === nNorm || pi === nNorm;
+                }) || players[0];
+                finalLic = match.licence;
+                logDebug(`Lookup API: ${nomClean} -> ${finalLic}`);
+            }
+        } catch (e) {
+            logDebug(`Erreur recherche API pour ${nomClean}: ${e.message}`);
+        }
+    }
+
+    if (!finalLic) return;
+    if (!state.playerDetailsCache) state.playerDetailsCache = {};
+    if (!state.playerMatchesCache) state.playerMatchesCache = {};
+
+    // 1. Points mensuels
+    if (!state.playerDetailsCache[finalLic] || forceRefresh) {
+        try {
+            const pDet = await fetchData('getPlayerDetail', { licence: finalLic }, forceRefresh);
+            const pData = (pDet && pDet.joueur) ? pDet.joueur : pDet;
+            logDebug(`API Detail for ${nomClean} (${finalLic}): Mensuel=${pData.point}, Officiel=${pData.valcla}`);
+            if (pData && (pData.point !== undefined || pData.valcla !== undefined)) {
+                const mPts = parseFloat(pData.point || 0);
+                const oPts = parseFloat(pData.valcla || 0);
+                state.playerDetailsCache[finalLic] = {
+                    points: (state.apiPointsMode === 'officiel' ? oPts : mPts) || mPts || oPts,
+                    nom: nomClean
+                };
+                // Optionnel: Sauvegarde locale pour persistance
+                const monthLabel = getCurrentFFTTMonthLabel();
+                localStorage.setItem(`ttcav_mensuel_${finalLic}_${monthLabel}`, mPts);
+                logDebug(`Updated Cache for ${nomClean}: ${state.playerDetailsCache[finalLic].points}`);
+            }
+        } catch (e) { console.error(`Erreur sync points ${nomClean}:`, e); }
+    }
+
+    // 2. Historique des matchs (Gains réels)
+    if (!state.playerMatchesCache[finalLic] || forceRefresh) {
+        try {
+            const pMatches = await fetchData('getPlayerMatches', { licence: finalLic }, forceRefresh);
+            if (pMatches && pMatches.matches) {
+                state.playerMatchesCache[finalLic] = pMatches.matches;
+            }
+        } catch (e) { console.error(`Erreur sync matches ${nomClean}:`, e); }
     }
 }
 
@@ -674,14 +769,9 @@ async function loadMatchdays(team, forceRefresh = false) {
         if (data && data.tour) {
             const roundsList = Array.isArray(data.tour) ? data.tour : [data.tour];
 
-            // Ne garder que les tours qui ont au moins un résultat dans la poule
-            const playedRounds = roundsList.filter(r => {
-                let sA = typeof r.scorea === 'string' ? r.scorea.trim() : '';
-                let sB = typeof r.scoreb === 'string' ? r.scoreb.trim() : '';
-                return sA !== '' || sB !== '';
-            });
-            state.matchdays = playedRounds;
-            logDebug(`${playedRounds.length} journées jouées trouvées.`);
+            // On garde tous les tours pour permettre la sélection même si pas encore de score
+            state.matchdays = roundsList;
+            logDebug(`${roundsList.length} journées trouvées.`);
 
             // Option pour TOUTE la phase
             const allOpt = document.createElement('option');
@@ -690,15 +780,7 @@ async function loadMatchdays(team, forceRefresh = false) {
             elements.selectDay.appendChild(allOpt);
 
             const seenRounds = new Set();
-            // On itère sur la liste complète pour garder les bons numéros de tour par défaut
             roundsList.forEach((round, idx) => {
-                let sA = typeof round.scorea === 'string' ? round.scorea.trim() : '';
-                let sB = typeof round.scoreb === 'string' ? round.scoreb.trim() : '';
-                const hasScore = (sA !== '' || sB !== '');
-
-                // On ne l'affiche dans le menu que s'il y a un score (sauf si mode "all")
-                if (!hasScore) return;
-
                 let d = (typeof round.dateprevue === 'string' ? round.dateprevue : '') ||
                     (typeof round.datereelle === 'string' ? round.datereelle : '') || '';
 
@@ -710,7 +792,7 @@ async function loadMatchdays(team, forceRefresh = false) {
                 if (seenRounds.has(key)) return;
                 seenRounds.add(key);
 
-                // On stocke la date de référence pour ce tour (utile pour le recalage des autres équipes)
+                // On stocke la date de référence pour ce tour
                 if (d) state.tourDates[key] = d;
 
                 const opt = document.createElement('option');
@@ -719,12 +801,21 @@ async function loadMatchdays(team, forceRefresh = false) {
                 elements.selectDay.appendChild(opt);
             });
 
-            // Sélection par défaut de la dernière journée
-            if (state.matchdays.length > 0) {
-                const lastRound = state.matchdays[state.matchdays.length - 1];
+            // Sélection par défaut de la dernière journée JOUÉE (ou la dernière tout court si aucune jouée)
+            const playedRounds = roundsList.filter(r => {
+                let sA = typeof r.scorea === 'string' ? r.scorea.trim() : '';
+                let sB = typeof r.scoreb === 'string' ? r.scoreb.trim() : '';
+                return sA !== '' || sB !== '';
+            });
+            
+            if (playedRounds.length > 0) {
+                const lastRound = playedRounds[playedRounds.length - 1];
                 const lastTm = getVal(lastRound.libelle).match(/(?:tour|journ[eé]e|barrage|titre)\s*(?:n°)?\s*\d+/i);
-                const lastKey = lastTm ? lastTm[0].toLowerCase().replace(/\s*n°\s*/, ' ').trim() : `tour ${state.matchdays.length}`;
+                const lastKey = lastTm ? lastTm[0].toLowerCase().replace(/\s*n°\s*/, ' ').trim() : `tour ${roundsList.indexOf(lastRound) + 1}`;
                 elements.selectDay.value = lastKey;
+            } else if (roundsList.length > 0) {
+                // Si rien n'est joué, on prend le tour le plus proche d'aujourd'hui
+                elements.selectDay.value = Array.from(seenRounds)[0]; // Par défaut le premier
             }
         } else {
             logDebug("Aucune journée trouvée dans la réponse API.", "error");
@@ -735,9 +826,13 @@ async function loadMatchdays(team, forceRefresh = false) {
 }
 
 // ===== GÉNÉRATION DES RÉSULTATS =====
-async function generateResults() {
+async function generateResults(forceRefresh = false) {
     const selectedDayVal = elements.selectDay.value;
     const selectedTeamIdx = elements.selectTeam.value;
+
+    if (state.nextGenerateForceRefresh) {
+        forceRefresh = true;
+    }
 
     if (!selectedDayVal) return showToast('Veuillez sélectionner une journée.', true);
 
@@ -797,7 +892,7 @@ async function generateResults() {
                 return;
             }
 
-            const data = await fetchData('getMatches', { divisionId, pouleId });
+            const data = await fetchData('getMatches', { divisionId, pouleId }, forceRefresh);
             console.log(`DEBUG: Equipe ${teamName}, Division: ${divisionId}, Poule: ${pouleId}, Matchs trouvés: ${data?.tour?.length || (data?.tour ? 1 : 0)}`);
 
             if (data && data.tour) {
@@ -867,7 +962,8 @@ async function generateResults() {
                             const matchesLibelle = (tExt === selectedDayVal);
                             if (matchesLibelle) {
                                 // On accepte seulement si on n'a pas de date de référence ou si elle n'est pas trop délirante
-                                if (refDate && mDate && !isDateClose(mDate, refDate, 9)) return false;
+                                // On passe à 15 jours de marge si le libellé correspond exactement (cas des matchs décalés)
+                                if (refDate && mDate && !isDateClose(mDate, refDate, 15)) return false;
                             } else {
                                 // 3. Pas de date ni de libellé qui matche ? On tente l'index en dernier recours
                                 if (!mDate || !refDate) {
@@ -996,37 +1092,54 @@ function renderResults() {
         return numA - numB;
     });
 
-    elements.resultsGrid.innerHTML = state.results.map((res, index) => {
-        let statusClass = 'draw';
-        let statusText = 'NUL';
+    const validatedMatches = state.results.filter(r => r.isValidated);
+    const calculatedMatches = state.results.filter(r => !r.isValidated);
 
-        const myScore = res.isHome ? res.scoreA : res.scoreB;
-        const opScore = res.isHome ? res.scoreB : res.scoreA;
+    let html = '';
 
-        if (myScore > opScore) { statusClass = 'win'; statusText = 'VICTOIRE'; }
-        else if (myScore < opScore) { statusClass = 'loss'; statusText = 'DÉFAITE'; }
-        if (myScore === 0 && opScore === 0) { statusClass = 'draw'; statusText = 'À VENIR'; }
+    if (validatedMatches.length > 0) {
+        html += `<div class="group-title-bar group-validated">MATCHS VALIDÉS (${validatedMatches.length})</div>`;
+        html += validatedMatches.map((res, index) => renderMatchCard(res, state.results.indexOf(res))).join('');
+    }
 
-        return `
-            <div class="result-card ${statusClass} result-card-app" style="animation-delay: ${index * 0.1}s;">
-                <div class="card-header-compact">
-                    <span class="category-label">${res.category}</span>
-                    <span class="status-badge-mini status-${statusClass}">${statusText}</span>
-                </div>
-                <div class="match-info-compact">
-                    <div class="side-team-compact text-right">${res.isHome ? res.teamName : res.opponent}</div>
-                    <div class="score-display">
-                        <span class="score-badge-compact ${statusClass}">${res.score}</span>
-                    </div>
-                    <div class="side-team-compact text-left">${res.isHome ? res.opponent : res.teamName}</div>
-                </div>
-                <div class="card-footer-compact">
-                    <span class="match-date-mini"><i class="far fa-calendar-alt"></i> ${res.date}</span>
-                    ${res.detailLink ? `<button class="secondary btn-details-mini" onclick="showMatchDetails(${index})">Détails</button>` : ''}
-                </div>
+    if (calculatedMatches.length > 0) {
+        html += `<div class="group-title-bar group-calculated" style="margin-top: 2rem;">MATCHS NON VALIDÉS (${calculatedMatches.length})</div>`;
+        html += calculatedMatches.map((res, index) => renderMatchCard(res, state.results.indexOf(res))).join('');
+    }
+
+    elements.resultsGrid.innerHTML = html;
+}
+
+function renderMatchCard(res, index) {
+    let statusClass = 'draw';
+    let statusText = 'NUL';
+
+    const myScore = res.isHome ? res.scoreA : res.scoreB;
+    const opScore = res.isHome ? res.scoreB : res.scoreA;
+
+    if (myScore > opScore) { statusClass = 'win'; statusText = 'VICTOIRE'; }
+    else if (myScore < opScore) { statusClass = 'loss'; statusText = 'DÉFAITE'; }
+    if (myScore === 0 && opScore === 0) { statusClass = 'draw'; statusText = 'À VENIR'; }
+
+    return `
+        <div class="result-card ${statusClass} result-card-app" style="animation-delay: ${index * 0.1}s;">
+            <div class="card-header-compact">
+                <span class="category-label">${res.category}</span>
+                <span class="status-badge-mini status-${statusClass}">${statusText}</span>
             </div>
-        `;
-    }).join('');
+            <div class="match-info-compact">
+                <div class="side-team-compact text-right">${res.isHome ? res.teamName : res.opponent}</div>
+                <div class="score-display">
+                    <span class="score-badge-compact ${statusClass}">${res.score}</span>
+                </div>
+                <div class="side-team-compact text-left">${res.isHome ? res.opponent : res.teamName}</div>
+            </div>
+            <div class="card-footer-compact">
+                <span class="match-date-mini"><i class="far fa-calendar-alt"></i> ${res.date}</span>
+                ${res.detailLink ? `<button class="secondary btn-details-mini" onclick="showMatchDetails(${index})">Détails</button>` : ''}
+            </div>
+        </div>
+    `;
 }
 
 // ===== DÉTAILS DU MATCH =====
@@ -1050,26 +1163,22 @@ async function showMatchDetails(index) {
             if (data && data.joueur) {
                 const plist = Array.isArray(data.joueur) ? data.joueur : [data.joueur];
                 if (!state.playerDetailsCache) state.playerDetailsCache = {};
-
                 for (const pj of plist) {
-                    const processPlayer = async (lic, nom) => {
-                        if (lic && (!state.playerDetailsCache[lic])) {
-                            updateLoaderStep(`Points mensuels : ${nom}...`);
-                            const pDet = await fetchData('getPlayerDetail', { licence: lic }, true);
-                            const pData = (pDet && pDet.joueur) ? pDet.joueur : pDet;
-                            if (pData && (pData.point !== undefined || pData.valcla !== undefined)) {
-                                state.playerDetailsCache[lic] = {
-                                    points: parseFloat(pData.point || pData.valcla || 0),
-                                    nom: nom
-                                };
-                                logDebug(`Sync Live: ${nom} (${lic}) -> ${state.playerDetailsCache[lic].points}`);
-                            }
-                        }
-                    };
-                    // Côté A
-                    await processPlayer(pj.xla || pj.licence || '', (pj.xja || pj.nom || '').trim());
-                    // Côté B
-                    await processPlayer(pj.xlb || '', (pj.xjb || '').trim());
+                    updateLoaderStep(`Sync : ${pj.xja || pj.nom}...`);
+                    await syncPlayerDetails(pj.xla || pj.licence || '', (pj.xja || pj.nom || '').trim(), true);
+                    await syncPlayerDetails(pj.xlb || '', (pj.xjb || '').trim(), true);
+                }
+            } else if (data && data.partie) {
+                // Cas des tournois / indy : on extrait les noms depuis les parties
+                const plist = Array.isArray(data.partie) ? data.partie : [data.partie];
+                const names = new Set();
+                for (const p of plist) {
+                    if (p.ja && p.ja.trim() && p.ja !== '-') names.add(p.ja.trim());
+                    if (p.jb && p.jb.trim() && p.jb !== '-') names.add(p.jb.trim());
+                }
+                for (const name of names) {
+                    updateLoaderStep(`Sync : ${name}...`);
+                    await syncPlayerDetails('', name, true);
                 }
             }
         } catch (err) {
@@ -1106,6 +1215,9 @@ async function showMatchDetails(index) {
             setTimeout(() => {
                 generateAISummaryClickHandler(matchID);
             }, 300);
+
+            // Refresh grid to show validation status
+            renderResults();
         } else {
             showToast('Impossible de charger les détails de ce match.', true);
         }
@@ -1285,6 +1397,7 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
 
             const pA = {
                 nom: nA_clean,
+                licence: licA,
                 classement: pA_raw.text || '',
                 mensuel: mPtsA_raw,
                 rawPoints: pA_raw.raw,
@@ -1293,6 +1406,7 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
             };
             const pB = {
                 nom: nB_clean,
+                licence: licB,
                 classement: pB_raw.text || '',
                 mensuel: mPtsB_raw,
                 rawPoints: pB_raw.raw,
@@ -1320,15 +1434,35 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
             });
             jouas = Array.from(tempA).map(nom => {
                 const m = getMonthlyPoints(nom);
-                let custom = state.customPlayerPoints && state.customPlayerPoints[nom];
-                let base = state.apiPointsMode === 'officiel' ? 0 : (m || 0);
-                return { nom, classement: '', mensuel: m, rawPoints: m || 0, calcPoints: custom !== undefined ? custom : base, isCap: false };
+                let fallbackRating = 0;
+                const matchWithPlayer = partiesFallback.find(p => {
+                    const ja = (getVal(p.ja) || '').replace(' et ', ' / ').split(' / ');
+                    return ja.some(n => norm(n) === norm(nom));
+                });
+                if (matchWithPlayer && (matchWithPlayer.cla || matchWithPlayer.clatA)) {
+                    fallbackRating = parseFloat((matchWithPlayer.cla || matchWithPlayer.clatA).replace(/[^\d\.]/g, '')) || 0;
+                }
+                if (!m && !fallbackRating) fallbackRating = 500; // Default to 500 if nothing found
+
+                const custom = state.customPlayerPoints && state.customPlayerPoints[nom];
+                const base = state.apiPointsMode === 'officiel' ? (m || fallbackRating) : (m || fallbackRating);
+                return { nom, classement: fallbackRating ? fallbackRating.toString() : '', mensuel: m, rawPoints: m || fallbackRating || 0, calcPoints: custom !== undefined ? custom : base, isCap: false };
             });
             joubs = Array.from(tempB).map(nom => {
                 const m = getMonthlyPoints(nom);
-                let custom = state.customPlayerPoints && state.customPlayerPoints[nom];
-                let base = state.apiPointsMode === 'officiel' ? 0 : (m || 0);
-                return { nom, classement: '', mensuel: m, rawPoints: m || 0, calcPoints: custom !== undefined ? custom : base, isCap: false };
+                let fallbackRating = 0;
+                const matchWithPlayer = partiesFallback.find(p => {
+                    const jb = (getVal(p.jb) || '').replace(' et ', ' / ').split(' / ');
+                    return jb.some(n => norm(n) === norm(nom));
+                });
+                if (matchWithPlayer && (matchWithPlayer.clb || matchWithPlayer.clatB)) {
+                    fallbackRating = parseFloat((matchWithPlayer.clb || matchWithPlayer.clatB).replace(/[^\d\.]/g, '')) || 0;
+                }
+                if (!m && !fallbackRating) fallbackRating = 500; // Default to 500 if nothing found
+
+                const custom = state.customPlayerPoints && state.customPlayerPoints[nom];
+                const base = state.apiPointsMode === 'officiel' ? (m || fallbackRating) : (m || fallbackRating);
+                return { nom, classement: fallbackRating ? fallbackRating.toString() : '', mensuel: m, rawPoints: m || fallbackRating || 0, calcPoints: custom !== undefined ? custom : base, isCap: false };
             });
         }
 
@@ -1367,8 +1501,8 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
 
                 const sep = clastStr ? ' - ' : '';
                 const displayPointsHTML = isWordPress
-                    ? `<span class="ranking-num-wrapper">${clastStr}${sep}</span>${Math.round(j.calcPoints)}`
-                    : `${clastStr}${sep}${Math.round(j.calcPoints)}`;
+                    ? `<span class="ranking-num-wrapper">${clastStr}${sep}</span>${j.calcPoints.toFixed(1)}`
+                    : `${clastStr}${sep}${j.calcPoints.toFixed(1)}`;
                 htmlA = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPointsHTML}</span></div>`;
             }
             let htmlB = '';
@@ -1389,8 +1523,8 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
 
                 const sep = clastStr ? ' - ' : '';
                 const displayPointsHTML = isWordPress
-                    ? `<span class="ranking-num-wrapper">${clastStr}${sep}</span>${Math.round(j.calcPoints)}`
-                    : `${clastStr}${sep}${Math.round(j.calcPoints)}`;
+                    ? `<span class="ranking-num-wrapper">${clastStr}${sep}</span>${j.calcPoints.toFixed(1)}`
+                    : `${clastStr}${sep}${j.calcPoints.toFixed(1)}`;
                 htmlB = `<div class="compo-player-box"><span>${nomHTML}</span><span>${displayPointsHTML}</span></div>`;
             }
             compoHTML += `<tr><td class="col-player">${htmlA}</td><td class="col-player">${htmlB}</td></tr>`;
@@ -1398,68 +1532,93 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
 
         compoHTML += `
         <tr class="compo-total-row">
-            <td>TOTAL POINTS EQUIPE : ${Math.round(equipeAPoints)}</td>
-            <td>TOTAL POINTS EQUIPE : ${Math.round(equipeBPoints)}</td>
+            <td>TOTAL POINTS EQUIPE : ${equipeAPoints.toFixed(1)}</td>
+            <td>TOTAL POINTS EQUIPE : ${equipeBPoints.toFixed(1)}</td>
         </tr>
     </tbody></table>`;
 
-        // ===== FEUILLE DE RENCONTRE =====
+        // Helper pour déterminer si un match est dans la période provisoire (01 au 10 du mois en cours)
+        function isProvisionalMatch(dateStr) {
+            if (!dateStr) return false;
+            const parts = dateStr.split('/');
+            if (parts.length !== 3) return false;
+            const day = parseInt(parts[0]);
+            const month = parseInt(parts[1]);
+            const year = parseInt(parts[2]);
+            
+            const now = new Date();
+            const currentDay = now.getDate();
+            const currentMonth = now.getMonth() + 1;
+            const currentYear = now.getFullYear();
+            
+            // Si le match est du mois en cours et qu'on est avant le 11 (le 10 inclus)
+            if (year === currentYear && month === currentMonth && currentDay <= 10) {
+                return true;
+            }
+            return false;
+        }
+
+        const isProvisionalPeriod = isProvisionalMatch(res.date);
+
         const parties = Array.isArray(details.partie) ? details.partie : (details.partie ? [details.partie] : []);
 
-        function getPointsGained(ratingA, ratingB, wonA) {
-            if (!ratingA || !ratingB) return 0;
-            const diff = ratingA - ratingB;
+        function getPointsGained(ratingA, ratingB, wonA, coeff = 1.0) {
+            const rA = Math.max(ratingA || 0, 500);
+            const rB = Math.max(ratingB || 0, 500);
+            const diff = rA - rB;
             const adiff = Math.abs(diff);
 
+            let base = 0;
             if (wonA) {
                 if (diff >= 0) {
                     // VICTOIRE NORMALE (VN)
-                    if (diff >= 500) return 0;
-                    if (diff >= 400) return 0.5;
-                    if (diff >= 300) return 1;
-                    if (diff >= 200) return 2;
-                    if (diff >= 150) return 3;
-                    if (diff >= 100) return 4;
-                    if (diff >= 50) return 5;
-                    if (diff >= 25) return 5.5;
-                    return 6;
+                    if (diff >= 500) base = 0;
+                    else if (diff >= 400) base = 0.5;
+                    else if (diff >= 300) base = 1;
+                    else if (diff >= 200) base = 2;
+                    else if (diff >= 150) base = 3;
+                    else if (diff >= 100) base = 4;
+                    else if (diff >= 50) base = 5;
+                    else if (diff >= 25) base = 5.5;
+                    else base = 6;
                 } else {
                     // VICTOIRE ANORMALE (VA - PERF)
-                    if (adiff >= 500) return 40;
-                    if (adiff >= 400) return 28;
-                    if (adiff >= 300) return 22;
-                    if (adiff >= 200) return 17;
-                    if (adiff >= 150) return 13;
-                    if (adiff >= 100) return 10;
-                    if (adiff >= 50) return 8;
-                    if (adiff >= 25) return 7;
-                    return 6;
+                    if (adiff >= 500) base = 40;
+                    else if (adiff >= 400) base = 28;
+                    else if (adiff >= 300) base = 22;
+                    else if (adiff >= 200) base = 17;
+                    else if (adiff >= 150) base = 13;
+                    else if (adiff >= 100) base = 10;
+                    else if (adiff >= 50) base = 8;
+                    else if (adiff >= 25) base = 7;
+                    else base = 6;
                 }
             } else {
                 if (diff >= 0) {
                     // DÉFAITE ANORMALE (DA - CONTRE)
-                    if (diff >= 500) return -29;
-                    if (diff >= 400) return -20;
-                    if (diff >= 300) return -16;
-                    if (diff >= 200) return -12.5;
-                    if (diff >= 150) return -10;
-                    if (diff >= 100) return -8;
-                    if (diff >= 50) return -7;
-                    if (diff >= 25) return -6;
-                    return -5;
+                    if (diff >= 500) base = -29;
+                    else if (diff >= 400) base = -20;
+                    else if (diff >= 300) base = -16;
+                    else if (diff >= 200) base = -12.5;
+                    else if (diff >= 150) base = -10;
+                    else if (diff >= 100) base = -8;
+                    else if (diff >= 50) base = -7;
+                    else if (diff >= 25) base = -6;
+                    else base = -5;
                 } else {
                     // DÉFAITE NORMALE (DN)
-                    if (adiff >= 500) return 0;
-                    if (adiff >= 400) return 0;
-                    if (adiff >= 300) return -0.5;
-                    if (adiff >= 200) return -1;
-                    if (adiff >= 150) return -2;
-                    if (adiff >= 100) return -3;
-                    if (adiff >= 50) return -4;
-                    if (adiff >= 25) return -4.5;
-                    return -5;
+                    if (adiff >= 500) base = 0;
+                    else if (adiff >= 400) base = 0;
+                    else if (adiff >= 300) base = -0.5;
+                    else if (adiff >= 200) base = -1;
+                    else if (adiff >= 150) base = -2;
+                    else if (adiff >= 100) base = -3;
+                    else if (adiff >= 50) base = -4;
+                    else if (adiff >= 25) base = -4.5;
+                    else base = -5;
                 }
             }
+            return base * coeff;
         }
 
         const clubStats = {};
@@ -1502,7 +1661,8 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
                     if (isNaN(val)) return;
                     const absVal = Math.abs(val);
                     const winVal = Math.max(11, absVal + 2);
-                    if (val >= 0) { sP1 = winVal; sP2 = absVal; } else { sP1 = absVal; sP2 = winVal; }
+                    const isNeg = setStr.trim().startsWith('-');
+                    if (!isNeg) { sP1 = winVal; sP2 = absVal; } else { sP1 = absVal; sP2 = winVal; }
                 }
 
                 if (!isNaN(sP1) && !isNaN(sP2)) {
@@ -1528,15 +1688,78 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
 
             const isWinForClub = res.isHome ? (finalSA > finalSB) : (finalSB > finalSA);
 
+            // Détection du coefficient (ex: Tournois)
+            const fullTitle = (res.category || "") + " " + (res.teamName || "");
+            const coeffMatch = fullTitle.match(/coeff\s*[x\*]?\s*(\d+(?:[\.,]\d+)?)/i);
+            const matchCoeff = coeffMatch ? parseFloat(coeffMatch[1].replace(',', '.')) : 1.0;
+
             let rowPoints = 0;
             if (jA && jB && jA !== '-' && jB !== '-' && !jA.toLowerCase().includes('double') && !jB.toLowerCase().includes('double')) {
-                const playerA = jouas.find(p => p.nom === jA);
-                const playerB = joubs.find(p => p.nom === jB);
-                if (playerA && playerB && playerA.calcPoints && playerB.calcPoints) {
-                    let gainA = getPointsGained(playerA.calcPoints, playerB.calcPoints, finalSA > finalSB);
-                    let gainB = getPointsGained(playerB.calcPoints, playerA.calcPoints, finalSB > finalSA);
-                    if (res.isHome) { rowPoints = gainA; if (clubStats[jA]) clubStats[jA].ptsMatch += rowPoints; }
+                // Pour les tournois, on cherche les joueurs dans les deux listes car Home/Away n'a pas de sens
+                const snA = norm(jA);
+                const snB = norm(jB);
+                const playerA = jouas.find(p => norm(p.nom) === snA) || joubs.find(p => norm(p.nom) === snA);
+                const playerB = joubs.find(p => norm(p.nom) === snB) || jouas.find(p => norm(p.nom) === snB);
+                
+                if (playerA && playerB) {
+                    // S'assurer qu'on a des points (même par défaut)
+                    if (!playerA.calcPoints) playerA.calcPoints = 500;
+                    if (!playerB.calcPoints) playerB.calcPoints = 500;
+
+                    // Calcul virtuel (fallback)
+                    let gainA = getPointsGained(playerA.calcPoints, playerB.calcPoints, finalSA > finalSB, matchCoeff);
+                    let gainB = getPointsGained(playerB.calcPoints, playerA.calcPoints, finalSB > finalSA, matchCoeff);
+                    
+                    // --- NOUVEAU : Tentative de récupération du gain RÉEL depuis l'API ---
+                    // On identifie notre joueur du club (celui qui est dans le roster state.players)
+                    const isClubA = playerA.licence && state.players.some(p => p.licence === playerA.licence);
+                    const isClubB = playerB.licence && state.players.some(p => p.licence === playerB.licence);
+                    
+                    const ourPlayer = (isClubA && !isClubB) ? playerA : (isClubB && !isClubA ? playerB : (res.isHome ? playerA : playerB));
+                    const opponent = (ourPlayer === playerA) ? playerB : playerA;
+                    const clubWon = (ourPlayer === playerA) ? (finalSA > finalSB) : (finalSB > finalSA);
+                    
+                    if (ourPlayer && ourPlayer.licence && state.playerMatchesCache[ourPlayer.licence]) {
+                        const history = state.playerMatchesCache[ourPlayer.licence];
+                        const matchDate = res.date;
+                        
+                        const realMatch = history.find(m => {
+                            const hDate = m.date;
+                            const hOpponent = norm(m.advnompre || '');
+                            const hResult = m.vd;
+                            
+                            // Pour les tournois, on est très strict sur la date (même jour)
+                            const dateMatch = isDateClose(matchDate, hDate, 0); 
+                            const nameMatch = hOpponent === norm(opponent.nom);
+                            const resMatch = (clubWon ? 'V' : 'D') === hResult;
+                            
+                            return dateMatch && nameMatch && resMatch;
+                        });
+                        
+                        // On ne prend le point réel que s'il est non nul (sinon on garde le virtuel pour les tournois en attente)
+                        if (realMatch && realMatch.pts !== undefined) {
+                            const realGain = parseFloat(realMatch.pts.replace(',', '.'));
+                            // On ne valide OFFICIELLEMENT que si on n'est PAS en période provisoire OU si le point est vraiment différent de 0
+                            // (Le 10 et le 11, on peut avoir des points dans l'historique qui sont encore basés sur les anciens mensuels)
+                            if (Math.abs(realGain) > 0.01 && !isProvisionalPeriod) {
+                                logDebug(`Point Réel API trouvé pour ${ourPlayer.nom} vs ${opponent.nom} : ${realGain}`);
+                                if (ourPlayer === playerA) gainA = realGain; else gainB = realGain;
+                                res.isValidated = true;
+                            } else {
+                                logDebug(`Match ignoré pour validation officielle car ${isProvisionalPeriod ? 'PÉRIODE PROVISOIRE' : 'Point à 0.0'}. Utilisation du calcul virtuel.`, 'warn');
+                            }
+                        }
+                    } else {
+                        if (ourPlayer && ourPlayer.licence) {
+                             logDebug(`Aucun match trouvé dans l'historique API pour ${ourPlayer.nom} vs ${opponent.nom} (Date: ${res.date}). Maintien en PROVISOIRE.`, 'warn');
+                        }
+                    }
+
+                    if (ourPlayer === playerA) { rowPoints = gainA; if (clubStats[jA]) clubStats[jA].ptsMatch += rowPoints; }
                     else { rowPoints = gainB; if (clubStats[jB]) clubStats[jB].ptsMatch += rowPoints; }
+                    
+                    // Log de calcul pour debug
+                    logDebug(`Calcul ${res.isValidated ? 'RÉEL' : 'VIRTUEL'} pour ${ourPlayer.nom} (${Math.round(ourPlayer.calcPoints)}) vs ${opponent.nom} (${Math.round(opponent.calcPoints)}) : ${rowPoints.toFixed(1)}`);
                 }
             } else if (jA.toLowerCase().includes('double') || jA.includes('/') || jB.includes('/')) {
                 // Attribution du résultat du double aux joueurs individuels
@@ -1574,7 +1797,8 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
                     if (isNaN(val)) return '-';
                     const absVal = Math.abs(val);
                     const winVal = Math.max(11, absVal + 2);
-                    if (val >= 0) { p1 = winVal; p2 = absVal; } else { p1 = absVal; p2 = winVal; }
+                    const isNegStr = (s || "").toString().trim().startsWith('-');
+                    if (!isNegStr) { p1 = winVal; p2 = absVal; } else { p1 = absVal; p2 = winVal; }
                 }
 
                 if (isNaN(p1) || isNaN(p2)) return '-';
@@ -1602,7 +1826,7 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
                 <td class="col-set">${formattedSets[4]}</td>
                 <td class="col-score"><span class="${isWinForClub ? 'badge-win' : 'badge-loss'}">${finalSA}-${finalSB}</span></td>
                 <td class="col-pts-diff">
-                    <span class="pts-gain ${ptsClass}">${diff > 0 ? '+' : ''}${diff !== 0 ? diff.toFixed(1) : ''}</span>
+                    <span class="pts-gain ${ptsClass}">${diff > 0 ? '+' : ''}${diff.toFixed(1)}</span>
                 </td>
             </tr>
         `;
@@ -1647,7 +1871,10 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
             sets.forEach(s => {
                 if (!s) return;
                 const val = parseInt(s);
-                if (!isNaN(val)) { if (val < 0) setsWonB++; else setsWonA++; }
+                if (!isNaN(val)) {
+                    const isNegSet = (s || "").toString().trim().startsWith('-');
+                    if (isNegSet) setsWonB++; else setsWonA++;
+                }
             });
 
             // Fallback sur scorea/scoreb si pas de sets
@@ -1730,7 +1957,14 @@ function getMatchDetailsHTML(res, details, isWordPress = false, rankingData = nu
                             if (finalSA === 0 && finalSB === 0) {
                                 let sets = (m.detail || '').split(' ');
                                 if (sets.length < 2) sets = [m.ms1, m.ms2, m.ms3, m.ms4, m.ms5];
-                                sets.forEach(s => { let v = parseInt(s); if (!isNaN(v)) { if (v > 0) finalSA++; else finalSB++; } });
+                                sets.forEach(s => { 
+                                     if (!s) return;
+                                     let v = parseInt(s); 
+                                     if (!isNaN(v)) { 
+                                         const isNegSet = (s || "").toString().trim().startsWith('-');
+                                         if (isNegSet) finalSB++; else finalSA++; 
+                                     } 
+                                });
                             }
                             const isWin = detailSideAIsClub ? (finalSA > finalSB) : (finalSB > finalSA);
                             c.doubleResult = isWin ? 'V' : 'D';
@@ -2074,11 +2308,16 @@ function copyWPHTMLToClipboard() {
 
 // ===== EXPORT GLOBAL (TOUS LES MATCHS) =====
 async function copyAllMatchesToWordPress(forceRefresh = false) {
+    if (state.nextGenerateForceRefresh) {
+        forceRefresh = true;
+        // On ne reset pas forcément ici, generateResults s'en charge ou on le fait après le loop
+    }
+
     if (state.results.length === 0) return showToast('Générez d\'abord les résultats.', true);
 
     // S'assurer que les joueurs du club sont chargés (pour le lookup des licences)
-    if (state.players.length === 0) {
-        await loadPlayers(false);
+    if (state.players.length === 0 || forceRefresh) {
+        await loadPlayers(forceRefresh);
     }
 
     setAppBusy(true);
@@ -2139,7 +2378,8 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
         let loadedCount = 0;
         updateLoaderStep(`Préparation de l'export (${loadedCount}/${state.results.length})...`);
 
-        const allDataPromises = state.results.map(async (res) => {
+        const allResults = [];
+        for (const res of state.results) {
             const linkParams = new URLSearchParams(res.detailLink.includes('?') ? res.detailLink.split('?')[1] : res.detailLink);
             const is_retour = linkParams.get('is_retour') || '0';
             const renc_id = linkParams.get('renc_id') || linkParams.get('res_id') || '';
@@ -2155,53 +2395,17 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
                 if (!state.playerDetailsCache) state.playerDetailsCache = {};
                 
                 const playerPromises = [];
-                const processPlayer = async (lic, nom) => {
-                    let finalLic = lic;
-                    const nomClean = (nom || "").trim();
-
-                    // --- RECHERCHE DE LICENCE PAR NOM (Fallback si absent du détail) ---
-                    if (!finalLic && nomClean && state.players && state.players.length > 0) {
-                        const nNorm = norm(nomClean);
-                        const found = state.players.find(p => norm(`${p.nom} ${p.prenom}`) === nNorm || norm(`${p.prenom} ${p.nom}`) === nNorm);
-                        if (found) {
-                            finalLic = found.licence;
-                            logDebug(`Lookup: ${nomClean} -> Licence trouvée: ${finalLic}`);
-                        }
-                    }
-
-                    if (finalLic && (!state.playerDetailsCache[finalLic] || forceRefresh)) {
-                        try {
-                            const pDet = await fetchData('getPlayerDetail', { licence: finalLic }, forceRefresh);
-                            const pData = (pDet && pDet.joueur) ? pDet.joueur : pDet;
-                            if (pData && (pData.point !== undefined || pData.valcla !== undefined)) {
-                                const mPts = parseFloat(pData.point || 0);
-                                const oPts = parseFloat(pData.valcla || 0);
-                                state.playerDetailsCache[finalLic] = {
-                                    points: (state.apiPointsMode === 'officiel' ? oPts : mPts) || mPts || oPts,
-                                    nom: nomClean
-                                };
-                                logDebug(`Sync Live: ${nomClean} (${finalLic}) -> ${state.playerDetailsCache[finalLic].points}`);
-                            }
-                        } catch (e) { 
-                            console.error(`Erreur API pour ${nomClean}:`, e);
-                        }
-                    }
-                };
-
                 for (const pj of plist) {
-                    playerPromises.push(processPlayer(pj.xla || pj.licence || '', (pj.xja || pj.nom || '').trim()));
-                    playerPromises.push(processPlayer(pj.xlb || '', (pj.xjb || '').trim()));
+                    playerPromises.push(syncPlayerDetails(pj.xla || pj.licence || '', (pj.xja || pj.nom || '').trim(), forceRefresh));
+                    playerPromises.push(syncPlayerDetails(pj.xlb || '', (pj.xjb || '').trim(), forceRefresh));
                 }
                 await Promise.all(playerPromises);
             }
 
             loadedCount++;
             updateLoaderStep(`Chargement des données (${loadedCount}/${state.results.length}) : <br><b>${res.teamName}</b>`);
-
-            return { res, detailsData, classData };
-        });
-
-        const allResults = await Promise.all(allDataPromises);
+            allResults.push({ res, detailsData, classData });
+        }
 
         updateLoaderStep('Génération du rapport final...');
 
@@ -2394,6 +2598,7 @@ async function copyAllMatchesToWordPress(forceRefresh = false) {
     } finally {
         setAppBusy(false);
         elements.loaderText.textContent = originalText;
+        state.nextGenerateForceRefresh = false; // Reset après un export complet réussi
     }
 }
 
@@ -2590,7 +2795,7 @@ p.ttcav-wp-ai,
     border-bottom: 1px solid #f1f5f9 !important;
     border-right: 1px solid #f1f5f9 !important;
     font-size: 14px !important;
-    text-align: center !important;
+    text-align: left !important;
     color: #334155 !important;
     vertical-align: middle !important;
     background: transparent !important;

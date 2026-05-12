@@ -50,13 +50,21 @@ foreach ($players as $index => $p) {
         $detail = callApi('getPlayerDetail', ['licence' => $licence, 'refresh' => '1']);
         
         if ($detail && !isset($detail['error'])) {
-            echo "OK\n";
+            echo "OK (Detail) ";
         } else {
-            echo "ERREUR\n";
+            echo "ERR (Detail) ";
+        }
+
+        // Également rafraîchir l'historique des matches pour les points réels
+        $matches = callApi('getPlayerMatches', ['licence' => $licence, 'refresh' => '1']);
+        if ($matches && !isset($matches['error'])) {
+            echo "OK (Matches)\n";
+        } else {
+            echo "ERR (Matches)\n";
         }
         
         // Petite pause pour ne pas saturer l'API FFTT
-        usleep(200000); // 0.2s
+        usleep(300000); // 0.3s
     }
 }
 

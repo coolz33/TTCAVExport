@@ -11,6 +11,9 @@ ini_set('display_errors', 0);
 // Démarrer la mise en mémoire tampon pour éviter toute sortie accidentelle (espaces, warnings)
 ob_start();
 
+header("Cache-Control: no-cache, no-store, must-revalidate");
+header("Pragma: no-cache");
+header("Expires: 0");
 header('Content-Type: application/json; charset=utf-8');
 
 // Charger les variables d'environnement
@@ -28,7 +31,10 @@ $cacheDir = __DIR__ . '/cache';
 if (!is_dir($cacheDir)) {
     mkdir($cacheDir, 0777, true);
 }
-$cacheDuration = 86400; // 24 heures
+$cacheDuration = 86400; // 24 heures par défaut (joueurs, équipes)
+if (in_array($action, ['getMatches', 'getMatchDetails', 'getResults', 'getClassement'])) {
+    $cacheDuration = 1800; // 30 minutes pour les résultats et matchs
+}
 $bypassCache = (isset($_GET['refresh']) && $_GET['refresh'] == '1') 
                || ($action === 'clearCache')
                || ($action === 'saveCustomPoints')
@@ -61,8 +67,13 @@ if (!$action || ((!$appId || !$appKey) && !in_array($action, ['saveCustomPoints'
 $baseUrl = 'https://www.fftt.com/mobile/pxml/';
 
 // Signature calculation
-$tm = date('YmdHis') . substr(microtime(), 2, 3);
+// Générer un timestamp précis avec millisecondes
+$microtime = microtime(true);
+$tm = date('YmdHis', (int)$microtime) . sprintf('%03d', ($microtime * 1000) % 1000);
 $tmc = hash_hmac('sha1', $tm, hash('md5', $appKey));
+
+// Petit délai pour éviter les collisions de tm sur des requêtes ultra-rapides
+if ($bypassCache) usleep(10000); // 10ms
 
 if (!$serial) {
     $serial = '';
@@ -136,6 +147,11 @@ switch ($action) {
     case 'getPlayerHistory':
         $params['numlic'] = $_GET['licence'] ?? '';
         $xml = fetchData($baseUrl . 'xml_histo_classement.php', $params);
+        break;
+    case 'searchPlayers':
+        $params['nom'] = $_GET['nom'] ?? '';
+        $params['prenom'] = $_GET['prenom'] ?? '';
+        $xml = fetchData($baseUrl . 'xml_liste_joueur_o.php', $params);
         break;
     case 'getPlayerMatches':
         $licence = $_GET['licence'] ?? '';
